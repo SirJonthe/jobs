@@ -129,7 +129,7 @@ void cc0::proc::delete_killed_children(cc0::proc *&child)
 void cc0::proc::tick_children(uint64_t duration)
 {
 	for (cc0::proc *c = m_child; c != nullptr && is_active(); c = c->m_sibling) {
-		c->tick(scale_time(duration, c->m_time_scale));
+		c->tick(duration);
 	}
 }
 
@@ -169,6 +169,8 @@ cc0::proc::~proc( void )
 
 void cc0::proc::tick(uint64_t duration)
 {
+	duration = scale_time(duration, m_time_scale);
+
 	m_existed_for += duration;
 	++m_existed_tick_count;
 	if (is_sleeping()) {
@@ -304,13 +306,6 @@ cc0::proc::ref cc0::proc::get_ref( void )
 	return ref(this);
 }
 
-void cc0::ptree::pre_tick(uint64_t duration)
-{
-	if (get_child() == nullptr) {
-		kill();
-	}
-}
-
 uint64_t cc0::proc::get_existed_for( void ) const
 {
 	return m_existed_for;
@@ -369,4 +364,11 @@ void cc0::proc::set_time_scale(float time_scale)
 float cc0::proc::get_time_scale( void ) const
 {
 	return m_time_scale / float(1<<16);
+}
+
+void cc0::ptree::pre_tick(uint64_t duration)
+{
+	if (get_child() == nullptr) {
+		kill();
+	}
 }

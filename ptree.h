@@ -286,10 +286,36 @@ namespace cc0
 	/// @brief The root of the process tree. Kills execution if it has no children.
 	class ptree : public proc
 	{
+	private:
+		uint64_t m_min_duration;
+		uint64_t m_max_duration;
+		uint64_t m_duration;
+
 	protected:
 		/// @brief Kills children if it has no children.
-		/// @param duration The time elapsed since last tick. UNUSED.
+		/// @param duration The time elapsed since last tick.
 		void pre_tick(uint64_t duration);
+
+		// TODO IMPL
+		/// @brief Sleeps the tree.
+		/// @param duration The time elapsed since last tick.
+		//void post_tick(uint64_t duration);
+	
+	public:
+		// TODO DOC
+		/// @brief  Default constructor. No tick limits.
+		//ptree( void );
+		
+		/// TODO DOC
+		/// @brief Constructs the tree with tick limits.
+		/// @param min_ticks_per_sec The minimum number of ticks that will be performed per second. If the processes do not hit the target, the durations are clipped to the 1000 / min_ticks_per_sec.
+		/// @param max_ticks_per_sec The maximum number of ticks that will be performed per second. If the processes exceed the target the tree sleeps.
+		//ptree(uint64_t min_ticks_per_sec, uint64_t max_ticks_per_sec);
+
+		// TODO DOC
+		/// @brief 
+		/// @param  
+		//void tick( void );
 	};
 }
 
