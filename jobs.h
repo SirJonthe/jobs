@@ -9,10 +9,14 @@
 
 #include <cstdint>
 
+/// @brief Provides an easy way to register the name of a job class so that it can be allocated via a string later.
+/// @param job_name The class name of the class derived from the job class to register.
+/// @note The specified class name must be a class that at some stage in the chain has inherited from the main `job` class via the `inherit` class.
+/// @note Call this macro after right after declaring the class deriving from the job.
+/// @warning No special characters are allowed in the job name, so make sure to omit namespaces. This also means that the user needs to take care not to register different classes with the same name.
+/// @sa cc0::jobs::job
+/// @sa cc0::jobs::inherit
 #define CC0_JOBS_REGISTER(job_name) static const bool job_name##_registered = cc0::jobs::job::register_job<job_name>(#job_name);
-
-#define CC0_JOBS_INSTANCE(job_name_str) cc0::jobs::job::instance_job(job_name_str);
-
 namespace cc0
 {
 	namespace jobs
@@ -233,7 +237,7 @@ namespace cc0
 			{
 			public:
 				/// @brief A query filter. Add more of these to the query to specify your search. Do this by creating a new class and inheriting this filter class, then overloading the () operatior.
-				class filter : public inherit<filter, internal::rtti>
+				class filter
 				{
 				private:
 					filter *m_or;
@@ -305,9 +309,17 @@ namespace cc0
 					/// @return The next result in the chain.
 					result *get_next( void );
 
+					/// @brief Returns the next result in the chain.
+					/// @return The next result in the chain.
+					const result *get_next( void ) const;
+
 					/// @brief Returns the previous result in the chain.
 					/// @return The previous result in the chain.
 					result *get_prev( void );
+
+					/// @brief Returns the previous result in the chain.
+					/// @return The previous result in the chain.
+					const result *get_prev( void ) const;
 
 					/// @brief Deletes memory and removes result from chain of results.
 					/// @return The next result in the chain.
@@ -330,6 +342,14 @@ namespace cc0
 					/// @brief Returns the first result in the collection of results.
 					/// @return The first result in the collection of results.
 					result *get_results( void );
+
+					/// @brief Returns the first result in the collection of results.
+					/// @return The first result in the collection of results.
+					const result *get_results( void ) const;
+
+					/// @brief Counts the number of results.
+					/// @return The number of results.
+					uint64_t count_results( void ) const;
 				};
 
 			private:
@@ -368,6 +388,7 @@ namespace cc0
 			shared   *m_shared;
 			bool      m_enabled;
 			bool      m_kill;
+			bool      m_tick_lock;
 		
 		private:
 			/// @brief Generates a new, unique job ID. Just increments a counter.
@@ -457,11 +478,17 @@ namespace cc0
 			/// @brief Adds an event for the job to listen and respond to.
 			// void listen(const char *event_id);
 
-			/// @brief Adds a child to the job' list of children.
+			/// @brief Adds a child to the job's list of children.
 			/// @tparam job_t The type of the child to add to the job.
-			/// @return The job that was added.
+			/// @return A pointer to the job that was added of the type of the added job.
 			template < typename job_t >
 			job_t &add_child( void );
+
+			/// @brief Adds a child to the job's list of children.
+			/// @param name The class name of the child to add to the job.
+			/// @return A pointer to the job that was added of the type of a generic job. Null if the name has not been registered using CC0_JOBS_REGISTER.
+			/// @sa CC0_JOBS_REGISTER
+			job *add_child(const char *name);
 
 			/// @brief Enables the job, allowing it to tick and call the death function.
 			void enable( void );
@@ -608,12 +635,13 @@ namespace cc0
 			template < typename job_t >
 			static bool register_job(const char *name);
 
-			/// @brief Calls the appropriate instantiation function based on the provided job class derivative name.
-			/// @param name The name of the job class derivative to instantiate.
-			/// @return An allocated job class derivative based on the provided name. Null if there is no instantiation function for the provided name.
-			/// @note Do not use this function directly. Instead use CC0_JOBS_INSTANCE.
-			/// @sa CC0_JOBS_INSTANCE
-			static job *instance_job(const char *name);
+			/// @brief Traverses the child tree and counts the number of child jobs present under this parent.
+			/// @return The number of child jobs present under this parent.
+			uint64_t count_children( void ) const;
+
+			/// @brief Traverses the entire sub-tree and counts the number of decendant jobs under this parent.
+			/// @return The number of decendant jobs present under this parent.
+			uint64_t count_decendants( void ) const;
 		};
 		CC0_JOBS_REGISTER(job)
 
@@ -656,6 +684,12 @@ namespace cc0
 		/// @note The init job should set up everything for proper further execution of the jobs.
 		template < typename init_job_t >
 		void run( void );
+
+		/// @brief Spawns a root job node and attaches the specified initial job as a child to that node, then continues execution until the root node no longer has any children.
+		/// @param name The name of the initial job to attach as a child to the root node.
+		/// @note The init job should set up everything for proper further execution of the jobs.
+		/// @sa CC0_JOBS_REGISTER
+		void run(const char *name);
 	}
 }
 
@@ -750,7 +784,7 @@ job_t &cc0::jobs::job::add_child( void )
 template < typename job_t >
 cc0::jobs::job::query cc0::jobs::job::get_children( void )
 {
-	class type_filter : public inherit<type_filter, job::query::filter>
+	class type_filter : public job::query::filter
 	{
 	protected:
 		bool do_execute(const job &j) const { return j.cast<job_t>() != nullptr; }

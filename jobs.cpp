@@ -229,7 +229,17 @@ cc0::jobs::job::query::result *cc0::jobs::job::query::result::get_next( void )
 	return m_next;
 }
 
+const cc0::jobs::job::query::result *cc0::jobs::job::query::result::get_next( void ) const
+{
+	return m_next;
+}
+
 cc0::jobs::job::query::result *cc0::jobs::job::query::result::get_prev( void )
+{
+	return m_prev != nullptr ? *m_prev : nullptr;
+}
+
+const cc0::jobs::job::query::result *cc0::jobs::job::query::result::get_prev( void ) const
 {
 	return m_prev != nullptr ? *m_prev : nullptr;
 }
@@ -256,6 +266,22 @@ cc0::jobs::job::query::results::~results( void )
 cc0::jobs::job::query::result *cc0::jobs::job::query::results::get_results( void )
 {
 	return m_first;
+}
+
+const cc0::jobs::job::query::result *cc0::jobs::job::query::results::get_results( void ) const
+{
+	return m_first;
+}
+
+uint64_t cc0::jobs::job::query::results::count_results( void ) const
+{
+	const result *r = m_first;
+	uint64_t c = 0;
+	while (r != nullptr) {
+		++c;
+		r = r->get_next();
+	}
+	return c;
 }
 
 cc0::jobs::job::query::query(cc0::jobs::job *subject) : m_subject(subject->get_ref()), m_filter(nullptr)
@@ -356,7 +382,7 @@ cc0::jobs::job::job( void ) :
 	m_existed_for(0), m_active_for(0), m_existed_tick_count(0), m_active_tick_count(0),
 	m_time_scale(1 << 16),
 	m_shared(new shared{ 0, false }),
-	m_enabled(true), m_kill(false)
+	m_enabled(true), m_kill(false), m_tick_lock(false)
 {}
 
 cc0::jobs::job::~job( void )
@@ -375,56 +401,60 @@ cc0::jobs::job::~job( void )
 
 void cc0::jobs::job::tick(uint64_t duration)
 {
-	duration = scale_time(duration, m_time_scale);
+	if (!m_tick_lock) {
+		m_tick_lock = true;
 
-	m_existed_for += duration;
-	++m_existed_tick_count;
-	if (is_sleeping()) {
-		if (m_sleep <= duration) {
-			m_sleep = 0;
-			duration -= m_sleep;
-		} else {
-			m_sleep -= duration;
-			duration = 0;
+		duration = scale_time(duration, m_time_scale);
+
+		m_existed_for += duration;
+		++m_existed_tick_count;
+		if (is_sleeping()) {
+			if (m_sleep <= duration) {
+				m_sleep = 0;
+				duration -= m_sleep;
+			} else {
+				m_sleep -= duration;
+				duration = 0;
+			}
 		}
-	}
 
-	if (is_active()) {
-		m_active_for += duration;
-		++m_active_tick_count;
-		on_tick(duration);
-	}
+		if (is_active()) {
+			m_active_for += duration;
+			++m_active_tick_count;
+			on_tick(duration);
+		}
 
-	tick_children(duration);
+		tick_children(duration);
 
-	delete_killed_children(m_child);
+		delete_killed_children(m_child);
 
-	if (is_active()) {
-		on_tock(duration);
+		if (is_active()) {
+			on_tock(duration);
+		}
+
+		m_tick_lock = false;
 	}
 }
 
 void cc0::jobs::job::kill( void )
 {
 	if (is_alive()) {
-		m_enabled = false;
-		m_kill    = true;
-
 		kill_children();
 
 		delete m_child;
 		m_child = nullptr;
 
 		on_death();
+
+		m_enabled = false;
+		m_kill    = true;
 	}
 }
 
 void cc0::jobs::job::kill_children( void )
 {
-	if (is_alive()) {
-		for (cc0::jobs::job *c = m_child; c != nullptr; c = c->m_sibling) {
-			c->kill();
-		}
+	for (cc0::jobs::job *c = m_child; c != nullptr; c = c->m_sibling) {
+		c->kill();
 	}
 }
 
@@ -436,6 +466,11 @@ void cc0::jobs::job::sleep(uint64_t time)
 void cc0::jobs::job::wake( void )
 {
 	m_sleep = 0;
+}
+
+cc0::jobs::job *cc0::jobs::job::add_child(const char *name)
+{
+	return factory::instance_job(name);
 }
 
 void cc0::jobs::job::enable( void )
@@ -611,14 +646,38 @@ cc0::jobs::job::query cc0::jobs::job::search( void )
 	return query(this);
 }
 
-cc0::jobs::job *cc0::jobs::job::instance_job(const char *name)
+uint64_t cc0::jobs::job::count_children( void ) const
 {
-	return factory::instance_job(name);
+	const job *n = get_child();
+	uint64_t c = 0;
+	while (n != nullptr) {
+		++c;
+		n = n->get_sibling();
+	}
+	return c;
+}
+
+uint64_t cc0::jobs::job::count_decendants( void ) const
+{
+	const job *n = get_child();
+	uint64_t c = 0;
+	while (n != nullptr) {
+		c += (n->count_decendants() + 1);
+		n = n->get_sibling();
+	}
+	return c;
 }
 
 void cc0::jobs::jobs::on_tick(uint64_t duration)
 {
-	if (get_child() == nullptr) {
+	cc0::jobs::job *c = get_child();
+	while (c != nullptr) {
+		if (c->is_enabled()) {
+			break;
+		}
+		c = c->get_sibling();
+	}
+	if (c == nullptr) {
 		kill();
 	}
 }
@@ -628,3 +687,12 @@ cc0::jobs::jobs::jobs( void ) : inherit(), m_min_duration(0), m_max_duration(0),
 
 cc0::jobs::jobs::jobs(uint64_t min_ticks_per_sec, uint64_t max_ticks_per_sec) : inherit(), m_min_duration(1000 / min_ticks_per_sec), m_max_duration(1000 / max_ticks_per_sec), m_duration(m_min_duration)
 {}
+
+void cc0::jobs::run(const char *name)
+{
+	cc0::jobs::jobs j;
+	j.add_child(name);
+	while (j.is_enabled()) {
+		j.tick(0);
+	}
+}
