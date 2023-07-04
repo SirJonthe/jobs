@@ -22,6 +22,9 @@ const void *cc0::jobs::internal::rtti::self(uint64_t type_id) const
 	return this->type_id() == type_id ? this : nullptr;
 }
 
+cc0::jobs::internal::rtti::~rtti( void )
+{}
+
 uint64_t cc0::jobs::internal::rtti::type_id( void )
 {
 	static const uint64_t id = cc0::jobs::new_uuid();
@@ -107,6 +110,7 @@ const cc0::jobs::job *cc0::jobs::job::ref::get_job( void ) const
 	return m_job;
 }
 
+// TODO
 uint64_t cc0::jobs::job::factory::inventory::make_key(const char *s) const
 {
 	uint64_t k = 0;
@@ -183,35 +187,8 @@ cc0::jobs::job *cc0::jobs::job::factory::instance_job(const char *name)
 	return m_products.instance_job(name)->cast<cc0::jobs::job>();
 }
 
-bool cc0::jobs::job::query::filter::do_execute(const cc0::jobs::job &j) const
-{
-	return true;
-}
-
-cc0::jobs::job::query::filter::filter( void ) : m_or(nullptr), m_and(nullptr)
+cc0::jobs::job::query::result::result(cc0::jobs::job &j) : m_job(j.get_ref()), m_next(nullptr)
 {}
-
-cc0::jobs::job::query::filter::~filter( void )
-{
-	delete m_or;
-	delete m_and;
-}
-
-bool cc0::jobs::job::query::filter::operator()(const job &j) const
-{
-	return (do_execute(j) || (m_or != nullptr ? (*m_or)(j) : false)) && (m_and != nullptr ? (*m_and)(j) : true);
-}
-
-cc0::jobs::job::query::result::result(cc0::jobs::job &j, cc0::jobs::job::query::result **prev) : m_job(j.get_ref())
-{
-	m_prev = prev;
-	if (prev != nullptr && *prev != nullptr) {
-		m_next = (*prev)->m_next;
-		(*prev)->m_next = this;
-	} else {
-		m_next = nullptr;
-	}
-}
 
 cc0::jobs::job::query::result::~result( void )
 {
@@ -219,7 +196,7 @@ cc0::jobs::job::query::result::~result( void )
 	m_next = nullptr;
 }
 
-cc0::jobs::job::ref cc0::jobs::job::query::result::get_job( void )
+cc0::jobs::job::ref &cc0::jobs::job::query::result::get_job( void )
 {
 	return m_job;
 }
@@ -234,16 +211,6 @@ const cc0::jobs::job::query::result *cc0::jobs::job::query::result::get_next( vo
 	return m_next;
 }
 
-cc0::jobs::job::query::result *cc0::jobs::job::query::result::get_prev( void )
-{
-	return m_prev != nullptr ? *m_prev : nullptr;
-}
-
-const cc0::jobs::job::query::result *cc0::jobs::job::query::result::get_prev( void ) const
-{
-	return m_prev != nullptr ? *m_prev : nullptr;
-}
-
 cc0::jobs::job::query::result *cc0::jobs::job::query::result::remove( void )
 {
 	cc0::jobs::job::query::result *next = m_next;
@@ -255,12 +222,61 @@ cc0::jobs::job::query::result *cc0::jobs::job::query::result::remove( void )
 	return next;
 }
 
-cc0::jobs::job::query::results::results( void ) : m_first(nullptr)
+cc0::jobs::job::query::results::results( void ) : m_first(nullptr), m_end(&m_first)
 {}
 
 cc0::jobs::job::query::results::~results( void )
 {
 	delete m_first;
+}
+
+cc0::jobs::job::query::results::results(const cc0::jobs::job::query::results &r) : results()
+{
+	const result *res = r.get_results();
+	while (res != nullptr) {
+		add_result(*res->get_job().get_job());
+		res = res->get_next();
+	}
+}
+
+cc0::jobs::job::query::results &cc0::jobs::job::query::results::operator=(const cc0::jobs::job::query::results &r)
+{
+	if (this != &r) {
+		delete m_first;
+		m_first = nullptr;
+		m_end = &m_first;
+
+		const result *res = r.get_results();
+		while (res != nullptr) {
+			add_result(*res->get_job().get_job());
+			res = res->get_next();
+		}
+	}
+	return *this;
+}
+
+cc0::jobs::job::query::results::results(cc0::jobs::job::query::results &&r) : results()
+{
+	m_first = r.m_first;
+	m_end = r.m_end;
+
+	r.m_first = nullptr;
+	r.m_end = &r.m_first;
+}
+
+cc0::jobs::job::query::results &cc0::jobs::job::query::results::operator=(cc0::jobs::job::query::results &&r)
+{
+	if (this != &r) {
+		delete m_first;
+		
+		m_first = r.m_first;
+		m_end   = r.m_end;
+		
+		r.m_first = nullptr;
+		r.m_end = &r.m_first;
+	}
+	
+	return *this;
 }
 
 cc0::jobs::job::query::result *cc0::jobs::job::query::results::get_results( void )
@@ -284,17 +300,18 @@ uint64_t cc0::jobs::job::query::results::count_results( void ) const
 	return c;
 }
 
-cc0::jobs::job::query::query(cc0::jobs::job *subject) : m_subject(subject->get_ref()), m_filter(nullptr)
-{}
-
-cc0::jobs::job::query::~query( void )
+void cc0::jobs::job::query::results::add_result(cc0::jobs::job &j)
 {
-	delete m_filter;
+	*m_end = new query::result(j);
+	m_end = &(*m_end)->m_next;
 }
 
-cc0::jobs::job::query::results cc0::jobs::job::query::execute( void )
+cc0::jobs::job::query::~query( void )
+{}
+
+bool cc0::jobs::job::query::operator()(const cc0::jobs::job &j) const
 {
-	return cc0::jobs::job::query::results();
+	return true;
 }
 
 uint64_t cc0::jobs::job::new_pid( void )
@@ -641,9 +658,17 @@ float cc0::jobs::job::get_time_scale( void ) const
 	return m_time_scale / float(1<<16);
 }
 
-cc0::jobs::job::query cc0::jobs::job::search( void )
+cc0::jobs::job::query::results cc0::jobs::job::search_children(const cc0::jobs::job::query &q)
 {
-	return query(this);
+	query::results r;
+	job *c = get_child();
+	while (c != nullptr) {
+		if (q(*c)) {
+			r.add_result(*c);
+		}
+		c = c->get_sibling();
+	}
+	return r;
 }
 
 uint64_t cc0::jobs::job::count_children( void ) const

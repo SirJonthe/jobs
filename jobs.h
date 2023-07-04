@@ -44,6 +44,9 @@ namespace cc0
 				virtual const void *self(uint64_t type_id) const;
 
 			public:
+				/// @brief Does nothing.
+				virtual ~rtti( void );
+
 				/// @brief Returns a unique ID for this specific class.
 				/// @return A unique ID for this specific class.
 				static uint64_t type_id( void );
@@ -236,50 +239,13 @@ namespace cc0
 			class query
 			{
 			public:
-				/// @brief A query filter. Add more of these to the query to specify your search. Do this by creating a new class and inheriting this filter class, then overloading the () operatior.
-				class filter
-				{
-				private:
-					filter *m_or;
-					filter *m_and;
+				class results;
 				
-				protected:
-					// TODO DOC
-					/// @brief 
-					/// @param j 
-					/// @return 
-					virtual bool do_execute(const job &j) const;
-
-				public:
-					// TODO DOC
-					/// @brief 
-					filter( void );
-
-					// TODO DOC
-					/// @brief 
-					virtual ~filter( void );
-
-					/// @brief The filter function.
-					/// @param j The job to determine if it should be included in the search results.
-					/// @return True if the job should be included in the search results.
-					bool operator()(const job &j) const;
-
-					/// @brief Sets the AND filter.
-					/// @tparam filter_t The filter class to use.
-					/// @return The newly created filter.
-					template < typename filter_t >
-					filter_t &set_and_filter( void );
-
-					/// @brief Sets the OR filter.
-					/// @tparam filter_t The filter class to use.
-					/// @return The newly created filter.
-					template < typename filter_t >
-					filter_t &set_or_filter( void );
-				};
-
 				/// @brief A single result from a search query.
 				class result
 				{
+					friend class results;
+
 				private:
 					job::ref   m_job;
 					result    *m_next;
@@ -288,22 +254,14 @@ namespace cc0
 				public:
 					/// @brief Constructs a result.
 					/// @param j The job to store in the result.
-					result(job &j, result **prev);
+					result(job &j);
 
 					/// @brief Destroys the next result in the chain.
 					~result( void );
-
-					/// @brief Copy constructor.
-					/// @param NA The result to copy. 
-					result(const result&) = default;
-
-					/// @brief Assignment operator.
-					/// @return The result to copy.
-					result &operator=(const result&) = default;
 					
 					/// @brief Returns the job stored in the result.
 					/// @return The job stored in the result.
-					job::ref get_job( void );
+					job::ref &get_job( void );
 
 					/// @brief Returns the next result in the chain.
 					/// @return The next result in the chain.
@@ -312,14 +270,6 @@ namespace cc0
 					/// @brief Returns the next result in the chain.
 					/// @return The next result in the chain.
 					const result *get_next( void ) const;
-
-					/// @brief Returns the previous result in the chain.
-					/// @return The previous result in the chain.
-					result *get_prev( void );
-
-					/// @brief Returns the previous result in the chain.
-					/// @return The previous result in the chain.
-					const result *get_prev( void ) const;
 
 					/// @brief Deletes memory and removes result from chain of results.
 					/// @return The next result in the chain.
@@ -330,7 +280,8 @@ namespace cc0
 				class results
 				{
 				public:
-					result *m_first;
+					result  *m_first;
+					result **m_end;
 				
 				public:
 					/// @brief Default constructor.
@@ -338,6 +289,24 @@ namespace cc0
 
 					/// @brief Deletes memory.
 					~results( void );
+
+					/// @brief Copies a results list.
+					/// @param r The results list to copy.
+					results(const results &r);
+
+					/// @brief Copies a results list.
+					/// @param r The results list to copy.
+					/// @return A reference to self.
+					results &operator=(const results &r);
+
+					/// @brief Moves results from one list to another.
+					/// @param r The list to move the results from.
+					results(results &&r);
+
+					/// @brief Moves results from one list to another.
+					/// @param r The list to move the results from.
+					/// @return A reference to self.
+					results &operator=(results &&r);
 
 					/// @brief Returns the first result in the collection of results.
 					/// @return The first result in the collection of results.
@@ -350,28 +319,21 @@ namespace cc0
 					/// @brief Counts the number of results.
 					/// @return The number of results.
 					uint64_t count_results( void ) const;
+
+					/// @brief Adds a job to the results.
+					/// @param j The job to add.
+					void add_result(job &j);
 				};
 
-			private:
-				job::ref  m_subject;
-				filter   *m_filter;
-
 			public:
-				/// @brief Constructs an empty query with the specified job as the subject (database).
-				/// @param subject The subject to use as a database when searching for children matching the filters.
-				query(job *subject);
-
 				/// @brief Frees data in query.
-				~query( void );
-
-				/// @brief Sets a filter to the filter chain.
-				/// @tparam filter_t The filter class to use.
-				template < typename filter_t >
-				filter_t &set_filter( void );
+				virtual ~query( void );
 				
-				/// @brief Applies the filters to the children of the subject and selects only those which match the filters.
-				/// @return The search results after performing the query.
-				results execute( void );
+				/// @brief Applies a user-defined test (filter) to a provided job.
+				/// @param j The job to apply the filter to.
+				/// @return True if the provided job matches the criteria.
+				/// @note Override this with custom behavior to create custom filters for searches. 
+				virtual bool operator()(const job &j) const;
 			};
 
 		private:
@@ -616,15 +578,22 @@ namespace cc0
 			/// @return The current time scale for this job.
 			float get_time_scale( void ) const;
 
-			/// @brief Returns a default query (no filters) using this job as the subject of the search.
-			/// @return A default query without filters.
-			query search( void );
+			/// @brief Applies a query.
+			/// @return A list of results containing children matching the query.
+			query::results search_children(const query &q);
+
+			/// @brief Applies a query.
+			/// @tparam query_t The type of the query. Can be a class overloading the () operator taking a const-ref job and returning bool, or a function taking a const-ref job and returning bool.
+			/// @param q The query.
+			/// @return A list of results containing children matching the query.
+			template < typename query_t >
+			query::results search_children(const query_t &q);
 
 			/// @brief Returns a query filtering out children not of the requested job type.
 			/// @tparam job_t The children of the job matching job type.
-			/// @return A query filtering out children not of the requested job type.
+			/// @return A list of results filtering out children not of the requested job type.
 			template < typename job_t >
-			query get_children( void );
+			query::results get_children( void );
 
 			/// @brief Adds the job class derivative to the factory in order for it to be able to be instantiated later.
 			/// @tparam job_t The type of the job class derivative.
@@ -736,39 +705,6 @@ void cc0::jobs::job::factory::register_job(const char *name)
 	factory::m_products.add_job(name, job_t::instance);
 }
 
-template < typename filter_t >
-filter_t &cc0::jobs::job::query::filter::set_and_filter( void )
-{
-	if (m_and != nullptr) {
-		delete m_and;
-	}
-	filter_t *f = new filter_t;
-	m_and = f;
-	return *f;
-}
-
-template < typename filter_t >
-filter_t &cc0::jobs::job::query::filter::set_or_filter( void )
-{
-	if (m_or != nullptr) {
-		delete m_or;
-	}
-	filter_t *f = new filter_t;
-	m_or = f;
-	return *f;
-}
-
-template < typename filter_t >
-filter_t &cc0::jobs::job::query::set_filter( void )
-{
-	if (m_filter != nullptr) {
-		delete m_filter;
-	}
-	filter_t *f = new filter_t;
-	m_filter = f;
-	return *f;
-}
-
 template < typename job_t >
 job_t &cc0::jobs::job::add_child( void )
 {
@@ -781,17 +717,25 @@ job_t &cc0::jobs::job::add_child( void )
 	return *p;
 }
 
-template < typename job_t >
-cc0::jobs::job::query cc0::jobs::job::get_children( void )
+template < typename query_t >
+cc0::jobs::job::query::results cc0::jobs::job::search_children(const query_t &q)
 {
-	class type_filter : public job::query::filter
-	{
-	protected:
-		bool do_execute(const job &j) const { return j.cast<job_t>() != nullptr; }
-	};
-	query q;
-	q.set_filter<type_filter>();
-	return q;
+	query::results r;
+	job *c = get_child();
+	while (c != nullptr) {
+		if (q(*c)) {
+			r.add_result(*c);
+		}
+		c = c->get_sibling();
+	}
+	return r;
+}
+
+template < typename job_t >
+cc0::jobs::job::query::results cc0::jobs::job::get_children( void )
+{
+	class type_filter : public job::query { public: bool operator()(const job &j) const { return j.cast<job_t>() != nullptr; } };
+	return search_children<type_filter>();
 }
 
 template < typename job_t >

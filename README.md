@@ -213,3 +213,4 @@ Beware of adding children to a parent when a child dies.
 * Better way of handling notifications between jobs, such as via a hash table of functionality.
 * Better, pre-typecasted references
 * Functional time scaling
+* Add a non-shitty hash function for strings.
