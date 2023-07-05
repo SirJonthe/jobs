@@ -4,6 +4,7 @@
 /// @copyright Public domain.
 /// @license CC0 1.0
 
+#include <thread>
 #include "jobs.h"
 
 uint64_t cc0::jobs::new_uuid( void )
@@ -34,6 +35,11 @@ uint64_t cc0::jobs::internal::rtti::type_id( void )
 cc0::jobs::internal::rtti *cc0::jobs::internal::rtti::instance( void )
 {
 	return new rtti;
+}
+
+uint64_t cc0::jobs::internal::rtti::object_id( void ) const
+{
+	return type_id();
 }
 
 cc0::jobs::job::ref::ref(cc0::jobs::job *p) : m_job(p), m_shared(p != nullptr ? p->m_shared : nullptr)
@@ -230,31 +236,6 @@ cc0::jobs::job::query::results::~results( void )
 	delete m_first;
 }
 
-cc0::jobs::job::query::results::results(const cc0::jobs::job::query::results &r) : results()
-{
-	const result *res = r.get_results();
-	while (res != nullptr) {
-		add_result(*res->get_job().get_job());
-		res = res->get_next();
-	}
-}
-
-cc0::jobs::job::query::results &cc0::jobs::job::query::results::operator=(const cc0::jobs::job::query::results &r)
-{
-	if (this != &r) {
-		delete m_first;
-		m_first = nullptr;
-		m_end = &m_first;
-
-		const result *res = r.get_results();
-		while (res != nullptr) {
-			add_result(*res->get_job().get_job());
-			res = res->get_next();
-		}
-	}
-	return *this;
-}
-
 cc0::jobs::job::query::results::results(cc0::jobs::job::query::results &&r) : results()
 {
 	m_first = r.m_first;
@@ -304,6 +285,19 @@ void cc0::jobs::job::query::results::add_result(cc0::jobs::job &j)
 {
 	*m_end = new query::result(j);
 	m_end = &(*m_end)->m_next;
+}
+
+cc0::jobs::job::query::results cc0::jobs::job::query::results::filter_results(const cc0::jobs::job::query &q)
+{
+	results r;
+	result *c = get_results();
+	while (c != nullptr) {
+		if (q(*c->get_job().get_job())) {
+			r.add_result(*c->get_job().get_job());
+		}
+		c = c->get_next();
+	}
+	return r;
 }
 
 cc0::jobs::job::query::~query( void )
@@ -658,14 +652,17 @@ float cc0::jobs::job::get_time_scale( void ) const
 	return m_time_scale / float(1<<16);
 }
 
-cc0::jobs::job::query::results cc0::jobs::job::search_children(const cc0::jobs::job::query &q)
+cc0::jobs::job::query::results cc0::jobs::job::filter_children(const cc0::jobs::job::query &q)
+{
+	return get_children().filter_results(q);
+}
+
+cc0::jobs::job::query::results cc0::jobs::job::get_children( void )
 {
 	query::results r;
 	job *c = get_child();
 	while (c != nullptr) {
-		if (q(*c)) {
-			r.add_result(*c);
-		}
+		r.add_result(*c);
 		c = c->get_sibling();
 	}
 	return r;
@@ -707,17 +704,39 @@ void cc0::jobs::jobs::on_tick(uint64_t duration)
 	}
 }
 
-cc0::jobs::jobs::jobs( void ) : inherit(), m_min_duration(0), m_max_duration(0), m_duration(m_min_duration)
+cc0::jobs::jobs::jobs( void ) :
+	inherit(),
+	m_min_duration_ns(0), m_max_duration_ns(0),
+	m_duration_ns(m_min_duration_ns)
 {}
 
-cc0::jobs::jobs::jobs(uint64_t min_ticks_per_sec, uint64_t max_ticks_per_sec) : inherit(), m_min_duration(1000 / min_ticks_per_sec), m_max_duration(1000 / max_ticks_per_sec), m_duration(m_min_duration)
+cc0::jobs::jobs::jobs(uint64_t min_ticks_per_sec, uint64_t max_ticks_per_sec) :
+	inherit(),
+	m_min_duration_ns(1000000000 / min_ticks_per_sec), m_max_duration_ns(1000000000 / max_ticks_per_sec),
+	m_duration_ns(m_min_duration_ns)
 {}
+
+void cc0::jobs::jobs::auto_tick( void )
+{
+	const auto start_time = std::chrono::high_resolution_clock::now();
+
+	tick(m_duration_ns / 1000000);
+
+	const uint64_t diff_ns = (std::chrono::high_resolution_clock::now() - start_time).count();
+
+	if (diff_ns < m_min_duration_ns) {
+		std::this_thread::sleep_for(std::chrono::nanoseconds(m_min_duration_ns - diff_ns));
+		m_duration_ns = m_min_duration_ns;
+	} else {
+		m_duration_ns = diff_ns < m_max_duration_ns ? diff_ns : m_max_duration_ns;
+	}
+}
 
 void cc0::jobs::run(const char *name)
 {
 	cc0::jobs::jobs j;
 	j.add_child(name);
 	while (j.is_enabled()) {
-		j.tick(0);
+		j.auto_tick();
 	}
 }

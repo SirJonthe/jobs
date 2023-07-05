@@ -17,6 +17,7 @@
 /// @sa cc0::jobs::job
 /// @sa cc0::jobs::inherit
 #define CC0_JOBS_REGISTER(job_name) static const bool job_name##_registered = cc0::jobs::job::register_job<job_name>(#job_name);
+
 namespace cc0
 {
 	namespace jobs
@@ -66,6 +67,10 @@ namespace cc0
 				/// @brief Creates a new instance of the RTTI class.
 				/// @return The new instance.
 				static rtti *instance( void );
+
+				/// @brief Returns the type ID of the object instance (polymorphic).
+				/// @return The type ID of the object instance.
+				virtual uint64_t object_id( void ) const;
 			};
 		}
 
@@ -95,6 +100,10 @@ namespace cc0
 			/// @brief Creates a new instance of the the self_t class.
 			/// @return The new instance.
 			static internal::rtti *instance( void );
+
+			/// @brief Returns the type ID of the object instance (polymorphic).
+			/// @return The type ID of the object instance.
+			uint64_t object_id( void ) const;
 		};
 
 		/// @brief An ease-of-use typedef for the function pointer signature used to instantiate job class derivatives.
@@ -263,6 +272,10 @@ namespace cc0
 					/// @return The job stored in the result.
 					job::ref &get_job( void );
 
+					/// @brief Returns the job stored in the result.
+					/// @return The job stored in the result.
+					const job::ref &get_job( void ) const;
+
 					/// @brief Returns the next result in the chain.
 					/// @return The next result in the chain.
 					result *get_next( void );
@@ -290,15 +303,6 @@ namespace cc0
 					/// @brief Deletes memory.
 					~results( void );
 
-					/// @brief Copies a results list.
-					/// @param r The results list to copy.
-					results(const results &r);
-
-					/// @brief Copies a results list.
-					/// @param r The results list to copy.
-					/// @return A reference to self.
-					results &operator=(const results &r);
-
 					/// @brief Moves results from one list to another.
 					/// @param r The list to move the results from.
 					results(results &&r);
@@ -323,6 +327,18 @@ namespace cc0
 					/// @brief Adds a job to the results.
 					/// @param j The job to add.
 					void add_result(job &j);
+
+					/// @brief Applies an additional filter to the current results and returns the results.
+					/// @tparam query_t The query type.
+					/// @param q The query object.
+					/// @return The results of the filter.
+					template < typename query_t >
+					results filter_results(const query_t &q);
+
+					/// @brief Applies an additional filter to the current results and returns the results.
+					/// @param q The query object.
+					/// @return The results of the filter.
+					results filter_results(const query &q);
 				};
 
 			public:
@@ -386,15 +402,15 @@ namespace cc0
 			/// @param time_scale The fixed-point scale, shifted by 32 bits.
 			/// @return The scaled time.
 			static uint64_t scale_time(uint64_t time, uint64_t time_scale);
-		/// @brief Called when ticking the job, before the children are ticked.
 
 		protected:
-			/// @param duration The time elapsed.
+			/// @brief Called when ticking the job, before the children are ticked.
+			/// @param duration The time elapsed. User defined.
 			/// @note There is no default behavior. This must be overloaded.
 			virtual void on_tick(uint64_t duration);
 			
 			/// @brief Called when ticking the job, after the children have been ticked.
-			/// @param duration The time elapsed.
+			/// @param duration The time elapsed. User defined.
 			/// @note There is no default behavior. This must be overloaded.
 			virtual void on_tock(uint64_t duration);
 
@@ -580,14 +596,19 @@ namespace cc0
 
 			/// @brief Applies a query.
 			/// @return A list of results containing children matching the query.
-			query::results search_children(const query &q);
+			query::results filter_children(const query &q);
 
 			/// @brief Applies a query.
 			/// @tparam query_t The type of the query. Can be a class overloading the () operator taking a const-ref job and returning bool, or a function taking a const-ref job and returning bool.
 			/// @param q The query.
 			/// @return A list of results containing children matching the query.
 			template < typename query_t >
-			query::results search_children(const query_t &q);
+			query::results filter_children(const query_t &q);
+
+			/// @brief Returns a query result including all children.
+			/// @tparam job_t The children of the job matching job type.
+			/// @return A query result including all children.
+			query::results get_children( void );
 
 			/// @brief Returns a query filtering out children not of the requested job type.
 			/// @tparam job_t The children of the job matching job type.
@@ -618,19 +639,14 @@ namespace cc0
 		class jobs : public inherit<jobs, job>
 		{
 		private:
-			uint64_t m_min_duration;
-			uint64_t m_max_duration;
-			uint64_t m_duration;
+			uint64_t m_min_duration_ns;
+			uint64_t m_max_duration_ns;
+			uint64_t m_duration_ns;
 
 		protected:
 			/// @brief Starts timer. Terminates execution if it has no children.
 			/// @param duration The time elapsed since last tick.
 			void on_tick(uint64_t duration);
-
-			// TODO IMPL
-			/// @brief Sleeps the sub-tree if the execution time is faster than the minimum ticks per second.
-			/// @param duration The time elapsed since last tick.
-			//void on_tock(uint64_t duration);
 		
 		public:
 			/// @brief  Default constructor. No tick limits.
@@ -641,10 +657,9 @@ namespace cc0
 			/// @param max_ticks_per_sec The maximum number of ticks that will be performed per second. If the jobes exceed the target the tree sleeps.
 			jobs(uint64_t min_ticks_per_sec, uint64_t max_ticks_per_sec);
 
-			// TODO IMPL
+			// TODO DOC
 			/// @brief 
-			/// @param  
-			//void tick( void );
+			void auto_tick( void );
 		};
 		CC0_JOBS_REGISTER(jobs)
 
@@ -693,6 +708,12 @@ cc0::jobs::internal::rtti *cc0::jobs::inherit<self_t,base_t>::instance( void )
 }
 
 template < typename self_t, typename base_t >
+uint64_t cc0::jobs::inherit<self_t,base_t>::object_id( void ) const
+{
+	return type_id();
+}
+
+template < typename self_t, typename base_t >
 uint64_t cc0::jobs::inherit<self_t, base_t>::type_id( void )
 {
 	static const uint64_t id = cc0::jobs::new_uuid();
@@ -703,6 +724,20 @@ template < typename job_t >
 void cc0::jobs::job::factory::register_job(const char *name)
 {
 	factory::m_products.add_job(name, job_t::instance);
+}
+
+template < typename query_t >
+cc0::jobs::job::query::results cc0::jobs::job::query::results::filter_results(const query_t &q)
+{
+	results r;
+	result *c = get_results();
+	while (c != nullptr) {
+		if (q(*c->get_job().get_job())) {
+			r.add_result(*c->get_job().get_job());
+		}
+		c = c->get_next();
+	}
+	return r;
 }
 
 template < typename job_t >
@@ -718,24 +753,16 @@ job_t &cc0::jobs::job::add_child( void )
 }
 
 template < typename query_t >
-cc0::jobs::job::query::results cc0::jobs::job::search_children(const query_t &q)
+cc0::jobs::job::query::results cc0::jobs::job::filter_children(const query_t &q)
 {
-	query::results r;
-	job *c = get_child();
-	while (c != nullptr) {
-		if (q(*c)) {
-			r.add_result(*c);
-		}
-		c = c->get_sibling();
-	}
-	return r;
+	return get_children().filter_results<query_t>(q);
 }
 
 template < typename job_t >
 cc0::jobs::job::query::results cc0::jobs::job::get_children( void )
 {
-	class type_filter : public job::query { public: bool operator()(const job &j) const { return j.cast<job_t>() != nullptr; } };
-	return search_children<type_filter>();
+	class type_filter : public job::query { public: bool operator()(const job &j) const { return j.cast<job_t>() != nullptr; } } q;
+	return filter_children(q);
 }
 
 template < typename job_t >
