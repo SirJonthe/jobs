@@ -355,10 +355,10 @@ Always null-check persistent references on entering a new function.
 Spawning or killing children when the child itself is being spawned or killed is bad practice as infinite loops could easily be introduced.
 
 ## TODO
-* More and better documentation
-* Manipulate query results, such as joining two lists together
+* More and better documentation.
+* Manipulate query results, such as joining two lists together.
 * Too much nested namespaces for the end-user?
 * Better way of handling notifications between jobs, such as via a hash table or binary tree of functionality.
-* Better, pre-typecasted references
-* Functional time scaling
+* Better, pre-typecasted references.
+* Functional time scaling.
 * Add a good hash function for strings.
