@@ -7,17 +7,17 @@ github.com/SirJonthe
 ## About
 `jobs` is a minimalist library that introduces a the concept of jobs, or tasks, to C++11.
 
-A job, or a task, within the context of this library, is a tree of custom functionality that that executes in depth-first order. For every call to the job's main execution function, the job triggers not only its own custom code, but also that of its children. Jobs run forever until something triggers their termination.
+A job, or a task, within the context of this library, is a tree of custom functionality that that executes in depth-first order, mainly indended to be executed indefinitely until there are no more useful jobs to run or re-run. For every call to the job's main execution function, the job triggers not only its own custom code, but also that of its children. Jobs run forever until something triggers their termination.
 
 Jobs contain custom code that triggers during certain points in its life-time; During initialization, before child updates, after child updates, on notifications, and when falling out of scope. This allows the user to build complex, interactive systems.
 
-At its heart, this type of functionality is what you see in operating systems with how they handle multiple applications, where each job is analogous to an application, or a game engine, where each job is analogous to a game object.
+At its heart, this type of functionality is what you see in operating systems with how they handle multiple applications, where each job is analogous to an application, or game engines, where each job is analogous to a game object.
 
 ## Design
 `jobs` is intended to be minimal. It does not depend on STL, nor any other external library. It contains only the minimum amount of functionality to provide useful data structures. It exposes only the functionality and data structures needed to attain its goal, and keeps the implementation details private.
 
 ## Usage
-Some ease-of-use functionality is provided to get going quickly.
+`jobs` has one main class which the user will be interfacing most with, `cc0::jobs::job`. Additionally, the sub-class `cc0::jobs::jobs` provides some further refinements to the main class which makes it suitable as a root node, or compound node, in the job tree. Some ease-of-use functionality is provided to get going quickly, such as `cc0::jobs::run` which implements enough boiler plate code to just be able to make a single call to get the job tree executing. 
 
 ## Building
 No special adjustments need to be made to build `jobs` except enabling C++11 compatibility or above. Simply include the relevant headers in your code and make sure the headers and source files are available in your compiler search paths. Using `g++` as an example, building is no harder than:
@@ -38,10 +38,10 @@ In and by themselves, jobs do not perform much meaningful work in relation to th
 class custom_job : public cc0::jobs::inherit<custom_job, cc0::jobs::job>
 {
 protected:
-	void on_tick(uint64_t duration) { // Called every time the parent's `tick` function is called, before the job's childrens' `tick` is called.
+	void on_tick(uint64_t duration_ns) { // Called every time the parent's `tick` function is called, before the job's childrens' `tick` is called.
 		std::cout << '\\';
 	}
-	void on_tock(uint64_t duration) { // Called every time the parent's `tick` function is called, after the job's childrens' `tick` is called.
+	void on_tock(uint64_t duration_ns) { // Called every time the parent's `tick` function is called, after the job's childrens' `tick` is called.
 		std::cout << '/';
 	}
 	void on_birth( void ) { // Called only once when this job is added to the job tree.
@@ -122,12 +122,35 @@ int main()
 The `run` function comes in two variants; One taking a job class as template parameter, and one taking a string as a traditional parameter. The parameter is used to determine what initial job should be created. This job should be some kind of initialization job which adds further children to itself or the root job in order to form a useful application.
 
 ### Accessing the job tree
-The job tree can be accessed in a variety of different ways. Assume
+The job tree can be accessed in a variety of different ways. Assume we have access to a job, `j`, at an undefined location in the tree. Other jobs in the tree can be accessed via the following traversal techniques.
 
-get_root
-get_parent
-get_child
-get_sibling
+Traversing up the tree until the root is hit:
+```
+const cc0::jobs::job *p = j;
+while (p->get_parent() != nullptr) {
+	p = p->get_parent();
+}
+// At this location `p` will point to the root node.
+```
+
+The root node can be accessed directly without manual traversal:
+```
+const cc0::jobs::job *r = j->get_root();
+```
+
+A job's children can be accessed in the following manner:
+```
+const cc0::jobs::job *c = j->get_child();
+// `c` will now point to the first of `j`'s children, or null if `j` does not have children.
+```
+
+Traversing over a job's children is done in the following manner:
+```
+const cc0::jobs::job *c = j->get_child();
+while (c != nullptr) {
+	c = c->get_sibling();
+}
+```
 
 Note that `get_child` only returns the first child in the job's list of children. If there are additional children, these must be accessed via the first child's `get_sibling` function. Further children are accessed the same way as well.
 
@@ -147,12 +170,9 @@ Jobs often need to select children based off of some criteria. The criteria is e
 ```
 #include "jobs/jobs.h"
 
-class custom_filter : public cc0::jobs::query::filter
+bool only_enabled(const cc0::jobs::job &j)
 {
-public:
-	bool do_execute(const job &j) const {
-		return j.get_existed_for() > 10000; // The search criteria, i.e. the job must have existed for 1000 miliseconds.
-	}
+	return j.is_enabled(); // The search criteria, i.e. the job must have existed for 1000 miliseconds.
 };
 
 class custom_job : public cc0::jobs::inherit<custom_job, cc0::jobs::job>
@@ -160,21 +180,13 @@ class custom_job : public cc0::jobs::inherit<custom_job, cc0::jobs::job>
 protected:
 	void on_birth( void ) {
 		for (int i = 0; i < 10; ++i) {
-			add_child<cc0::jobs::job>();
+			job *j = add_child<cc0::jobs::job>();
+			if (i % 1) {
+				j->disable();
+			}
 		}
-	}
-	void on_tick(uint64_t duration) {
-		
-		if (get_exited_tick_count() % 10000 == 0) {
-			add_child<cc0::jobs::job>();
-		}
-		
-		query q = search();
-		q.add_term<custom_filter>();
-		query::results res = q.execute();
-		if (res.count_results() >= 10) {
-			kill();
-		}
+		cc0::job::query::results r = filter_children(only_enabled); // Returns only enabled children in a result list.
+		kill();
 	}
 };
 CC0_JOBS_REGISTER(custom_job)
@@ -185,32 +197,168 @@ int main()
 	return 0;
 }
 ```
-Queries apply to a target's children, but technically queries can be applied
+Queries only apply to a target's children, but technically queries can be applied on any part of the job tree by applying the principles of tree navigation as seen in the examples.
 
-`get_children` provides the user with a query that is common, i.e. selecting children of a certain type. This is just a conveinience function that wraps already existing functionality, but nevertheless proves to make code more readable when performing a common task.
+Once a result is returned, the result can be further filtered using `filter_results` on the `results` object. Calling filtering subsequently functions as and boolean logic where results in the final results list must pass all filters to be included.
+
+`get_children` provides the user with a query that is common, i.e. selecting children of a certain type. This is just a convenience function that wraps already existing functionality, but nevertheless proves to make code more readable when performing a common task.
+```
+class custom_job : public cc0::jobs::inherit<custom_job, cc0::jobs::job>
+{
+protected:
+	void on_birth( void ) {
+		cc0::jobs::job::query::results r = get_children<custom_job>();
+	}
+};
+CC0_JOBS_REGISTER(custom_job)
+```
+Queries should not use the provided methods for inheritance that would otherwise apply for jobs (i.e. `cc0::jobs::inherit`). The same goes for registering (i.e. `CC0_JOBS_REGISTER`), which should not be done for queries.
+
+There are a few optional ways to apply queries:
+
+One way is to inherit `cc0::jobs::job::query` and overloading the public `()` operator (`const`) taking a `const cc0::jobs::job&` as parameter and returning a `bool`.
+```
+class custom_query : public cc0::jobs::job::query
+{
+public:
+	bool operator()(const cc0::jobs::job &j) const {
+		return j.is_enabled();
+	}
+};
+```
+Filtering is then done via:
+```
+class custom_job : public cc0::jobs::inherit<custom_job, cc0::jobs::job>
+{
+protected:
+	void on_birth( void ) {
+		custom_query q;
+		cc0::jobs::job::query::results r = filter_children(q).filter_results(q);
+	}
+};
+CC0_JOBS_REGISTER(custom_job)
 ```
 
-
+Templates can also be used to apply filters in a more looser manner that does not require the user to inherit a base class:
 ```
-Filters should not use the provided methods for inheritance that would otherwise apply for jobs. The same goes for registering, which should not be done for filters.
+class custom_query_functor
+{
+public:
+	bool operator()(const cc0::jobs::job &j) const {
+		return j.is_enabled();
+	}
+};
+
+bool custom_query_function(const cc0::jobs::job &j)
+{
+	return j.is_enabled();
+}
+
+class custom_job : public cc0::jobs::inherit<custom_job, cc0::jobs::job>
+{
+protected:
+	void on_birth( void ) {
+		custom_query_functor ftor;
+		cc0::jobs::job::query::results r = filter_children(ftor).filter_results(custom_query_function);
+	}
+};
+CC0_JOBS_REGISTER(custom_job)
+```
+
+Custom queries can be invoked in two ways when using templates; One way by explicitly instantiating the query object is passing it as a reference, which is useful when objects require some attributes to be set before executing the query, and specifying its type as a template parameter and implicitly instantiating it. The example above shows explicit instantiation, while the one below shows implicit:
+```
+class custom_query_functor
+{
+public:
+	bool operator()(const cc0::jobs::job &j) const {
+		return j.is_enabled();
+	}
+};
+
+class custom_job : public cc0::jobs::inherit<custom_job, cc0::jobs::job>
+{
+protected:
+	void on_birth( void ) {
+		cc0::jobs::job::query::results r = filter_children<custom_query_functor>().filter_results<custom_query_functor>();
+	}
+};
+CC0_JOBS_REGISTER(custom_job)
+```
 
 ### Referencing an existing job
-Any job can access any other job in the tree. Any job may also expire at any time independent of other jobs. This means that there is a need to reference jobs inside other jobs in a safe manner.
+Any job can access any other job in the tree. Any job may also expire at any time independent of other jobs. This means that there is a need to reference jobs inside other jobs in a safe manner. `jobs` provides a way to reference jobs via `get_ref` in a way to reflect if not only their memory has been freed, and thus, their reference becoming invalidated.
+
+```
+#include <iostream>
+#include "jobs/jobs.h"
+
+class custom_job : cc0::jobs::inherit<custom_job, cc0::jobs::job>
+{
+private:
+	cc0::jobs::job::ref m_child; // A persistent reference.
+
+protected:
+	void on_birth( void ) {
+		m_child = add_child<cc0::jobs::job>()->get_ref(); // The persistent reference is set.
+	}
+	void on_tick(uint64_t) {
+		if (m_child.get_job() != nullptr) {
+			std::cout << "Reference is valid" << std::endl;
+			m_child->get_job()->kill(); // Once this is called, the reference will automatically become invalid.
+		} else {
+			std::cout << "Reference is invalid" << std::endl;
+			kill();
+		}
+	}
+};
+CC0_JOBS_REGISTER(custom_job)
+```
+
+As long as the job tree is executing on a single thread a reference to another job can be said to be valid for the duration of the current function call. If the programmer extends the job tree execution to be across multiple treads. In out-of-the-box functionality, references are mainly useful when a job references another job in a persistent manner, i.e. across multiple executions of the job tree.
 
 ### Dealing with durations and time
-`jobs` currently has poor support for time, but there are still some 
+`jobs` currently has poor support for handling of time. However, for interactive systems, the user should be aware of the `duration_ns` parameter passed to both `on_tick` and `on_tock` and scale scaleble work appropriately.
+
+```
+class timescaled_job : public cc0::jobs::job::inherit<timescaled_job,cc0::jobs::job>
+{
+private:
+	struct V3 { double x, y, x; };
+
+	V3 m_pos;
+	V3 m_ups; // Units per second
+	
+protected:
+	void on_birth( void ) {
+		m_pos.x =  0.00;
+		m_pos.y =  0.00;
+		m_pos.z =  0.00;
+		m_dir.x =  0.50;
+		m_dir.y =  0.25;
+		m_dir.z = -0.50;
+	}
+	void on_tick(uint64_t duration_ns) {
+		const double delta_time = duration_ns / 1000000000.0;
+		m_pos.x += m_ups.x * delta_time;
+		m_pos.y += m_ups.y * delta_time;
+		m_pos.z += m_ups.z * delta_time;
+	}
+};
+CC0_JOBS_REGISTER(timescaled_job)
+```
+
+Local time scaling (i.e. time dilation) is not properly supported at the moment. The idea is for each job to keep its own time and the programmer would be able to slow down or speed up its execution (including the execution of its children) independent from the rest of the parent tree and letting the time drift apart from the parent tree.
 
 ### Dangers
-Beware of stale references.
+Always null-check persistent references on entering a new function.
 
-Beware of adding children to a parent when a child dies.
+Spawning or killing children when the child itself is being spawned or killed is bad practice as infinite loops could easily be introduced.
 
 ## TODO
 * More and better documentation
 * Manipulate query results, such as joining two lists together
-* A single lambda function instead of queries and filters.
 * Too much nested namespaces for the end-user?
-* Better way of handling notifications between jobs, such as via a hash table of functionality.
+* Better way of handling notifications between jobs, such as via a hash table or binary tree of functionality.
 * Better, pre-typecasted references
 * Functional time scaling
-* Add a non-shitty hash function for strings.
+* Add a good hash function for strings.

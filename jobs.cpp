@@ -108,15 +108,14 @@ void cc0::jobs::job::ref::release( void )
 
 cc0::jobs::job *cc0::jobs::job::ref::get_job( void )
 {
-	return m_job;
+	return m_shared != nullptr && !m_shared->deleted ? m_job : nullptr;
 }
 
 const cc0::jobs::job *cc0::jobs::job::ref::get_job( void ) const
 {
-	return m_job;
+	return m_shared != nullptr && !m_shared->deleted ? m_job : nullptr;
 }
 
-// TODO
 uint64_t cc0::jobs::job::factory::inventory::make_key(const char *s) const
 {
 	uint64_t k = 0;
@@ -389,8 +388,8 @@ void cc0::jobs::job::on_message(const char *event, cc0::jobs::job *sender)
 cc0::jobs::job::job( void ) :
 	m_parent(nullptr), m_sibling(nullptr), m_child(nullptr),
 	m_pid(new_pid()),
-	m_sleep(0),
-	m_existed_for(0), m_active_for(0), m_existed_tick_count(0), m_active_tick_count(0),
+	m_sleep_ns(0),
+	m_existed_for_ns(0), m_active_for_ns(0), m_existed_tick_count(0), m_active_tick_count(0),
 	m_time_scale(1 << 16),
 	m_shared(new shared{ 0, false }),
 	m_enabled(true), m_kill(false), m_tick_lock(false)
@@ -417,20 +416,20 @@ void cc0::jobs::job::tick(uint64_t duration)
 
 		duration = scale_time(duration, m_time_scale);
 
-		m_existed_for += duration;
+		m_existed_for_ns += duration;
 		++m_existed_tick_count;
 		if (is_sleeping()) {
-			if (m_sleep <= duration) {
-				m_sleep = 0;
-				duration -= m_sleep;
+			if (m_sleep_ns <= duration) {
+				m_sleep_ns = 0;
+				duration -= m_sleep_ns;
 			} else {
-				m_sleep -= duration;
+				m_sleep_ns -= duration;
 				duration = 0;
 			}
 		}
 
 		if (is_active()) {
-			m_active_for += duration;
+			m_active_for_ns += duration;
 			++m_active_tick_count;
 			on_tick(duration);
 		}
@@ -469,14 +468,14 @@ void cc0::jobs::job::kill_children( void )
 	}
 }
 
-void cc0::jobs::job::sleep(uint64_t time)
+void cc0::jobs::job::sleep_for(uint64_t duration_ns)
 {
-	m_sleep = m_sleep > time ? m_sleep : time;
+	m_sleep_ns = m_sleep_ns > duration_ns ? m_sleep_ns : duration_ns;
 }
 
 void cc0::jobs::job::wake( void )
 {
-	m_sleep = 0;
+	m_sleep_ns = 0;
 }
 
 cc0::jobs::job *cc0::jobs::job::add_child(const char *name)
@@ -516,7 +515,7 @@ bool cc0::jobs::job::is_disabled( void ) const
 
 bool cc0::jobs::job::is_sleeping( void ) const
 {
-	return m_sleep > 0;
+	return m_sleep_ns > 0;
 }
 
 bool cc0::jobs::job::is_awake( void ) const
@@ -576,12 +575,12 @@ cc0::jobs::job::ref cc0::jobs::job::get_ref( void )
 
 uint64_t cc0::jobs::job::get_existed_for( void ) const
 {
-	return m_existed_for;
+	return m_existed_for_ns;
 }
 
 uint64_t cc0::jobs::job::get_active_for( void ) const
 {
-	return m_active_for;
+	return m_active_for_ns;
 }
 
 uint64_t cc0::jobs::job::get_existed_tick_count( void ) const
@@ -690,7 +689,7 @@ uint64_t cc0::jobs::job::count_decendants( void ) const
 	return c;
 }
 
-void cc0::jobs::jobs::on_tick(uint64_t duration)
+void cc0::jobs::jobs::kill_if_disabled_children( void )
 {
 	cc0::jobs::job *c = get_child();
 	while (c != nullptr) {
@@ -701,6 +700,20 @@ void cc0::jobs::jobs::on_tick(uint64_t duration)
 	}
 	if (c == nullptr) {
 		kill();
+	}
+}
+
+void cc0::jobs::jobs::adjust_duration(uint64_t tick_timing_ns)
+{
+	if (tick_timing_ns < m_min_duration_ns) {
+		if (get_parent() == nullptr) {
+			std::this_thread::sleep_for(std::chrono::nanoseconds(m_min_duration_ns - tick_timing_ns));
+		} else {
+			sleep_for(m_min_duration_ns - tick_timing_ns);
+		}
+		m_duration_ns = m_min_duration_ns;
+	} else {
+		m_duration_ns = tick_timing_ns < m_max_duration_ns ? tick_timing_ns : m_max_duration_ns;
 	}
 }
 
@@ -716,20 +729,15 @@ cc0::jobs::jobs::jobs(uint64_t min_ticks_per_sec, uint64_t max_ticks_per_sec) :
 	m_duration_ns(m_min_duration_ns)
 {}
 
-void cc0::jobs::jobs::auto_tick( void )
+void cc0::jobs::jobs::root_tick( void )
 {
 	const auto start_time = std::chrono::high_resolution_clock::now();
 
-	tick(m_duration_ns / 1000000);
+	kill_if_disabled_children();
 
-	const uint64_t diff_ns = (std::chrono::high_resolution_clock::now() - start_time).count();
+	tick(m_duration_ns);
 
-	if (diff_ns < m_min_duration_ns) {
-		std::this_thread::sleep_for(std::chrono::nanoseconds(m_min_duration_ns - diff_ns));
-		m_duration_ns = m_min_duration_ns;
-	} else {
-		m_duration_ns = diff_ns < m_max_duration_ns ? diff_ns : m_max_duration_ns;
-	}
+	adjust_duration((std::chrono::high_resolution_clock::now() - start_time).count());
 }
 
 void cc0::jobs::run(const char *name)
@@ -737,6 +745,6 @@ void cc0::jobs::run(const char *name)
 	cc0::jobs::jobs j;
 	j.add_child(name);
 	while (j.is_enabled()) {
-		j.auto_tick();
+		j.root_tick();
 	}
 }

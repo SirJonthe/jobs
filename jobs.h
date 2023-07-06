@@ -336,6 +336,12 @@ namespace cc0
 					results filter_results(const query_t &q);
 
 					/// @brief Applies an additional filter to the current results and returns the results.
+					/// @tparam query_t The query type.
+					/// @return The results of the filter.
+					template < typename query_t >
+					results filter_results( void );
+
+					/// @brief Applies an additional filter to the current results and returns the results.
 					/// @param q The query object.
 					/// @return The results of the filter.
 					results filter_results(const query &q);
@@ -357,9 +363,9 @@ namespace cc0
 			job      *m_sibling;
 			job      *m_child;
 			uint64_t  m_pid;
-			uint64_t  m_sleep;
-			uint64_t  m_existed_for;
-			uint64_t  m_active_for;
+			uint64_t  m_sleep_ns;
+			uint64_t  m_existed_for_ns;
+			uint64_t  m_active_for_ns;
 			uint64_t  m_existed_tick_count;
 			uint64_t  m_active_tick_count;
 			uint64_t  m_time_scale;
@@ -394,8 +400,8 @@ namespace cc0
 			void delete_killed_children(job *&child);
 
 			/// @brief Ticks children.
-			/// @param duration The time elapsed.
-			void tick_children(uint64_t duration);
+			/// @param duration_ns The time elapsed.
+			void tick_children(uint64_t duration_ns);
 
 			/// @brief Scales a time.
 			/// @param time The time to scale.
@@ -405,14 +411,14 @@ namespace cc0
 
 		protected:
 			/// @brief Called when ticking the job, before the children are ticked.
-			/// @param duration The time elapsed. User defined.
+			/// @param duration_ns The time elapsed. User defined.
 			/// @note There is no default behavior. This must be overloaded.
-			virtual void on_tick(uint64_t duration);
+			virtual void on_tick(uint64_t duration_ns);
 			
 			/// @brief Called when ticking the job, after the children have been ticked.
-			/// @param duration The time elapsed. User defined.
+			/// @param duration_ns The time elapsed. User defined.
 			/// @note There is no default behavior. This must be overloaded.
-			virtual void on_tock(uint64_t duration);
+			virtual void on_tock(uint64_t duration_ns);
 
 			/// @brief Called immediately when the job is created.
 			/// @note There is no default behavior. This must be overloaded.
@@ -436,8 +442,8 @@ namespace cc0
 			~job( void );
 
 			/// @brief Calls on_tick, ticks all children, and on_tock.
-			/// @param duration The time elapsed.
-			void tick(uint64_t duration);
+			/// @param duration_ns The time elapsed.
+			void tick(uint64_t duration_ns);
 			
 			/// @brief Queues the job for destruction. The 'on_death' function is called immediately (if the object is active), but the memory for the job may not be freed immediately.
 			/// @note Kills all children first, then kills the parent job. The 'death' function is only called if the job is active.
@@ -447,8 +453,8 @@ namespace cc0
 			void kill_children( void );
 			
 			/// @brief Lets the job sleep for a given amount of time. If the job is already sleeping only the difference in time is added to the sleep duration (if time is larger than the current sleep duration).
-			/// @param time The amount of time to sleep.
-			void sleep(uint64_t time);
+			/// @param duration_ns The amount of time to sleep.
+			void sleep_for(uint64_t duration_ns);
 
 			/// @brief Disables sleep.
 			void wake( void );
@@ -460,7 +466,7 @@ namespace cc0
 			/// @tparam job_t The type of the child to add to the job.
 			/// @return A pointer to the job that was added of the type of the added job.
 			template < typename job_t >
-			job_t &add_child( void );
+			job_t *add_child( void );
 
 			/// @brief Adds a child to the job's list of children.
 			/// @param name The class name of the child to add to the job.
@@ -539,11 +545,11 @@ namespace cc0
 			ref get_ref( void );
 
 			/// @brief Gets the accumulated time the job has existed for.
-			/// @return The accumulated time the job has existed for.
+			/// @return The accumulated time (in nanoseconds) the job has existed for.
 			uint64_t get_existed_for( void ) const;
 
 			/// @brief Gets the accumulated time the job has been active for.
-			/// @return The accumulated time the job has been active for.
+			/// @return The accumulated time (in nanoseconds) the job has been active for.
 			uint64_t get_active_for( void ) const;
 
 			/// @brief Gets the accumulated number of ticks the job has existed for.
@@ -605,6 +611,12 @@ namespace cc0
 			template < typename query_t >
 			query::results filter_children(const query_t &q);
 
+			/// @brief Applies a query.
+			/// @tparam query_t The type of the query. Can be a class overloading the () operator taking a const-ref job and returning bool, or a function taking a const-ref job and returning bool.
+			/// @return A list of results containing children matching the query.
+			template < typename query_t >
+			query::results filter_children( void );
+
 			/// @brief Returns a query result including all children.
 			/// @tparam job_t The children of the job matching job type.
 			/// @return A query result including all children.
@@ -638,28 +650,32 @@ namespace cc0
 		/// @brief A job node that monitors its children and kills execution when there are no remaining children.
 		class jobs : public inherit<jobs, job>
 		{
+			// TODO Let the job be able to choose between a hard sleep (i.e. sleep the hardware thread), or a soft sleep (i.e. spin-loop via sleep_for/sleep_until).
+
 		private:
 			uint64_t m_min_duration_ns;
 			uint64_t m_max_duration_ns;
 			uint64_t m_duration_ns;
 
-		protected:
-			/// @brief Starts timer. Terminates execution if it has no children.
-			/// @param duration The time elapsed since last tick.
-			void on_tick(uint64_t duration);
-		
+		private:
+			/// @brief Terminates the job if it has no enabled children.
+			void kill_if_disabled_children( void );
+
+			/// @brief Adjusts the time elapsed (duration) since last tick by either sleeping the job so it does not exceed the maximum number of ticks per second, or clip the duration to correspond to the minimum number of ticks per second.
+			/// @param tick_timing_ns The amount of time (in ns) it took to execute a tick including ticks of children.
+			void adjust_duration(uint64_t tick_timing_ns);
+
 		public:
 			/// @brief  Default constructor. No tick limits.
 			jobs( void );
 			
 			/// @brief Constructs the tree with tick limits.
-			/// @param min_ticks_per_sec The minimum number of ticks that will be performed per second. If the jobes do not hit the target, the durations are clipped to the 1000 / min_ticks_per_sec.
-			/// @param max_ticks_per_sec The maximum number of ticks that will be performed per second. If the jobes exceed the target the tree sleeps.
+			/// @param min_ticks_per_sec The minimum number of ticks that will be performed per second. If the jobes do not hit the target, the durations are clipped to a second divided by the minimum.
+			/// @param max_ticks_per_sec The maximum number of ticks that will be performed per second. If the jobes exceed the target the job and its children sleeps.
 			jobs(uint64_t min_ticks_per_sec, uint64_t max_ticks_per_sec);
 
-			// TODO DOC
-			/// @brief 
-			void auto_tick( void );
+			/// @brief A version of tick that terminates the job if it has no enabled children, and adjusts durations fed to children based on execution time and specified limits of the duration.
+			void root_tick( void );
 		};
 		CC0_JOBS_REGISTER(jobs)
 
@@ -740,8 +756,14 @@ cc0::jobs::job::query::results cc0::jobs::job::query::results::filter_results(co
 	return r;
 }
 
+template < typename query_t >
+cc0::jobs::job::query::results cc0::jobs::job::query::results::filter_results( void )
+{
+	return filter_results<query_t>(query_t());
+}
+
 template < typename job_t >
-job_t &cc0::jobs::job::add_child( void )
+job_t *cc0::jobs::job::add_child( void )
 {
 	job_t *p = nullptr;
 	if (!is_killed()) {
@@ -749,13 +771,19 @@ job_t &cc0::jobs::job::add_child( void )
 		add_sibling(m_child, p);
 		((job*)p)->on_birth();
 	}
-	return *p;
+	return p;
 }
 
 template < typename query_t >
 cc0::jobs::job::query::results cc0::jobs::job::filter_children(const query_t &q)
 {
 	return get_children().filter_results<query_t>(q);
+}
+
+template < typename query_t >
+cc0::jobs::job::query::results cc0::jobs::job::filter_children( void )
+{
+	return filter_children<query_t>(query_t());
 }
 
 template < typename job_t >
