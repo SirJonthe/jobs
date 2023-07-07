@@ -703,13 +703,26 @@ void cc0::jobs::jobs::kill_if_disabled_children( void )
 	}
 }
 
+void cc0::jobs::jobs::on_tick(uint64_t)
+{
+	m_tick_start_ns = std::chrono::high_resolution_clock::now().time_since_epoch().count();
+	kill_if_disabled_children();
+}
+
+void cc0::jobs::jobs::on_tock(uint64_t)
+{
+	adjust_duration(std::chrono::high_resolution_clock::now().time_since_epoch().count() - m_tick_start_ns);
+}
+
 void cc0::jobs::jobs::adjust_duration(uint64_t tick_timing_ns)
 {
 	if (tick_timing_ns < m_min_duration_ns) {
+		const uint64_t max_sleep = 1000000000 / m_min_duration_ns;
+		const uint64_t sleep_ns = m_min_duration_ns - tick_timing_ns;
 		if (get_parent() == nullptr) {
-			std::this_thread::sleep_for(std::chrono::nanoseconds(m_min_duration_ns - tick_timing_ns));
+			std::this_thread::sleep_for(std::chrono::nanoseconds(sleep_ns < max_sleep ? sleep_ns : max_sleep));
 		} else {
-			sleep_for(m_min_duration_ns - tick_timing_ns);
+			sleep_for(sleep_ns < max_sleep ? sleep_ns : max_sleep);
 		}
 		m_duration_ns = m_min_duration_ns;
 	} else {
@@ -726,18 +739,13 @@ cc0::jobs::jobs::jobs( void ) :
 cc0::jobs::jobs::jobs(uint64_t min_ticks_per_sec, uint64_t max_ticks_per_sec) :
 	inherit(),
 	m_min_duration_ns(1000000000 / min_ticks_per_sec), m_max_duration_ns(1000000000 / max_ticks_per_sec),
+	m_tick_start_ns(0),
 	m_duration_ns(m_min_duration_ns)
 {}
 
 void cc0::jobs::jobs::root_tick( void )
 {
-	const auto start_time = std::chrono::high_resolution_clock::now();
-
-	kill_if_disabled_children();
-
 	tick(m_duration_ns);
-
-	adjust_duration((std::chrono::high_resolution_clock::now() - start_time).count());
 }
 
 void cc0::jobs::run(const char *name)

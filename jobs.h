@@ -650,11 +650,10 @@ namespace cc0
 		/// @brief A job node that monitors its children and kills execution when there are no remaining children.
 		class jobs : public inherit<jobs, job>
 		{
-			// TODO Let the job be able to choose between a hard sleep (i.e. sleep the hardware thread), or a soft sleep (i.e. spin-loop via sleep_for/sleep_until).
-
 		private:
 			uint64_t m_min_duration_ns;
 			uint64_t m_max_duration_ns;
+			uint64_t m_tick_start_ns;
 			uint64_t m_duration_ns;
 
 		private:
@@ -664,6 +663,15 @@ namespace cc0
 			/// @brief Adjusts the time elapsed (duration) since last tick by either sleeping the job so it does not exceed the maximum number of ticks per second, or clip the duration to correspond to the minimum number of ticks per second.
 			/// @param tick_timing_ns The amount of time (in ns) it took to execute a tick including ticks of children.
 			void adjust_duration(uint64_t tick_timing_ns);
+		
+		protected:
+			/// @brief Terminates the job if it has no enabled children.
+			/// @param duration_ns Unused.
+			void on_tick(uint64_t duration_ns);
+
+			/// @brief Adjusts the time elapsed.
+			/// @param duration_ns Unused.
+			void on_tock(uint64_t duration_ns);
 
 		public:
 			/// @brief  Default constructor. No tick limits.

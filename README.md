@@ -304,7 +304,7 @@ protected:
 	void on_tick(uint64_t) {
 		if (m_child.get_job() != nullptr) {
 			std::cout << "Reference is valid" << std::endl;
-			m_child->get_job()->kill(); // Once this is called, the reference will automatically become invalid.
+			m_child.get_job()->kill(); // Once this is called, the reference will automatically become invalid.
 		} else {
 			std::cout << "Reference is invalid" << std::endl;
 			kill();
