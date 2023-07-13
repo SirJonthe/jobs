@@ -7,7 +7,7 @@
 #include <thread>
 #include "jobs.h"
 
-uint64_t cc0::jobs::new_uuid( void )
+uint64_t cc0::jobs::internal::new_uuid( void )
 {
 	static uint64_t uuid = 0;
 	return uuid++;
@@ -28,7 +28,7 @@ cc0::jobs::internal::rtti::~rtti( void )
 
 uint64_t cc0::jobs::internal::rtti::type_id( void )
 {
-	static const uint64_t id = cc0::jobs::new_uuid();
+	static const uint64_t id = cc0::jobs::internal::new_uuid();
 	return id;
 }
 
@@ -116,80 +116,27 @@ const cc0::jobs::job *cc0::jobs::job::ref::get_job( void ) const
 	return m_shared != nullptr && !m_shared->deleted ? m_job : nullptr;
 }
 
-uint64_t cc0::jobs::job::factory::inventory::make_key(const char *s) const
-{
-	uint64_t k = 0;
-	uint64_t i = 0;
-	while (s[i] != 0) {
-		k += uint64_t(s[i]) * (i+1);
-		++i;
-	}
-	return k;
-}
-
-bool cc0::jobs::job::factory::inventory::str_cmp(const char *a, const char *b) const
-{
-	while (*a != 0) {
-		if (*a != *b) { return false; }
-		++a;
-		++b;
-	}
-	return (*a == *b);
-}
-
-void cc0::jobs::job::factory::inventory::free_node(cc0::jobs::job::factory::inventory::node *n)
-{
-	if (n != nullptr) {
-		free_node(n->lte);
-		free_node(n->gt);
-		delete n;
-	}
-}
-
-cc0::jobs::job::factory::inventory::inventory( void ) : m_root(nullptr) 
-{}
-
-cc0::jobs::job::factory::inventory::~inventory( void )
-{
-	free_node(m_root);
-}
-
-void cc0::jobs::job::factory::inventory::add_job(const char *name, cc0::jobs::instance_fn instance)
-{
-	node *nn = new node{ make_key(name), name, instance, nullptr, nullptr };
-	node *&n = m_root;
-	while (n != nullptr) {
-		if (nn->key <= n->key) {
-			n = n->lte;
-		} else {
-			n = n->gt;
-		}
-	}
-	n = nn;
-}
-
-cc0::jobs::internal::rtti *cc0::jobs::job::factory::inventory::instance_job(const char *name)
-{
-	uint64_t key = make_key(name);
-	node *n = m_root;
-	while (n != nullptr) {
-		if (n->key == key && str_cmp(n->name, name)) {
-			break;
-		}
-		if (key > n->key) {
-			n = n->gt;
-		} else {
-			n = n->lte;
-		}
-	}
-	return n != nullptr ? n->instance() : nullptr;
-}
-
-cc0::jobs::job::factory::inventory cc0::jobs::job::factory::m_products = cc0::jobs::job::factory::inventory();
+cc0::jobs::internal::search_tree<cc0::jobs::instance_fn> cc0::jobs::job::factory::m_products = cc0::jobs::internal::search_tree<cc0::jobs::instance_fn>();
 
 cc0::jobs::job *cc0::jobs::job::factory::instance_job(const char *name)
 {
-	return m_products.instance_job(name)->cast<cc0::jobs::job>();
+	instance_fn *i = m_products.get(name);
+	return (i != nullptr) ? (*i)()->cast<cc0::jobs::job>() : nullptr;
+}
+
+cc0::jobs::job::callback::callback( void ) : m_callback(nullptr)
+{}
+
+cc0::jobs::job::callback::~callback( void )
+{
+	delete m_callback;
+}
+
+void cc0::jobs::job::callback::operator()(cc0::jobs::job &sender)
+{
+	if (m_callback != nullptr) {
+		(*m_callback)(sender);
+	}
 }
 
 cc0::jobs::job::query::result::result(cc0::jobs::job &j) : m_job(j.get_ref()), m_next(nullptr)
@@ -309,7 +256,7 @@ bool cc0::jobs::job::query::operator()(const cc0::jobs::job &j) const
 
 uint64_t cc0::jobs::job::new_pid( void )
 {
-	return cc0::jobs::new_uuid();
+	return cc0::jobs::internal::new_uuid();
 }
 
 void cc0::jobs::job::set_deleted( void )
@@ -365,6 +312,16 @@ void cc0::jobs::job::tick_children(uint64_t duration)
 	}
 }
 
+void cc0::jobs::job::get_notified(const char *event, cc0::jobs::job &sender)
+{
+	if (is_active()) {
+		callback *c = m_event_callbacks.get(event);
+		if (c != nullptr) {
+			(*c)(sender);
+		}
+	}
+}
+
 uint64_t cc0::jobs::job::scale_time(uint64_t time, uint64_t time_scale)
 {
 	return (time * time_scale) >> 16;
@@ -382,15 +339,13 @@ void cc0::jobs::job::on_birth( void )
 void cc0::jobs::job::on_death( void )
 {}
 
-void cc0::jobs::job::on_message(const char *event, cc0::jobs::job *sender)
-{}
-
 cc0::jobs::job::job( void ) :
 	m_parent(nullptr), m_sibling(nullptr), m_child(nullptr),
 	m_pid(new_pid()),
 	m_sleep_ns(0),
 	m_existed_for_ns(0), m_active_for_ns(0), m_existed_tick_count(0), m_active_tick_count(0),
 	m_time_scale(1 << 16),
+	m_event_callbacks(),
 	m_shared(new shared{ 0, false }),
 	m_enabled(true), m_kill(false), m_tick_lock(false)
 {}
@@ -478,6 +433,11 @@ void cc0::jobs::job::wake( void )
 	m_sleep_ns = 0;
 }
 
+void cc0::jobs::job::ignore(const char *event)
+{
+	m_event_callbacks.remove(event);
+}
+
 cc0::jobs::job *cc0::jobs::job::add_child(const char *name)
 {
 	return factory::instance_job(name);
@@ -533,7 +493,7 @@ bool cc0::jobs::job::is_inactive( void ) const
 	return !is_active();
 }
 
-uint64_t cc0::jobs::job::get_pid( void ) const
+uint64_t cc0::jobs::job::get_job_id( void ) const
 {
 	return m_pid;
 }
@@ -541,14 +501,14 @@ uint64_t cc0::jobs::job::get_pid( void ) const
 void cc0::jobs::job::notify_parent(const char *event)
 {
 	if (m_parent != nullptr && is_active()) {
-		m_parent->notify(event, this);
+		notify(event, *m_parent);
 	}
 }
 
 void cc0::jobs::job::notify_children(const char *event)
 {
 	for (cc0::jobs::job *c = m_child; c != nullptr && is_active(); c = c->m_sibling) {
-		c->notify(event, this);
+		notify(event, *c);
 	}
 }
 
@@ -556,16 +516,14 @@ void cc0::jobs::job::notify_group(const char *event, cc0::jobs::job::query::resu
 {
 	query::result *r = group.get_results();
 	while (r != nullptr && is_active()) {
-		r->get_job().get_job()->notify(event, this);
+		notify(event, *r->get_job().get_job());
 		r = r->get_next();
 	}
 }
 
-void cc0::jobs::job::notify(const char *event, cc0::jobs::job *sender)
+void cc0::jobs::job::notify(const char *event, cc0::jobs::job &target)
 {
-	if (is_active()) {
-		on_message(event, sender);
-	}
+	target.get_notified(event, *this);
 }
 
 cc0::jobs::job::ref cc0::jobs::job::get_ref( void )

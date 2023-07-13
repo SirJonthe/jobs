@@ -320,6 +320,8 @@ As long as the job tree is executing on a single thread a reference to another j
 `jobs` currently has poor support for handling of time. However, for interactive systems, the user should be aware of the `duration_ns` parameter passed to both `on_tick` and `on_tock` and scale scaleble work appropriately.
 
 ```
+#include "jobs/jobs.h"
+
 class timescaled_job : public cc0::jobs::job::inherit<timescaled_job,cc0::jobs::job>
 {
 private:
@@ -349,16 +351,125 @@ CC0_JOBS_REGISTER(timescaled_job)
 
 Local time scaling (i.e. time dilation) is not properly supported at the moment. The idea is for each job to keep its own time and the programmer would be able to slow down or speed up its execution (including the execution of its children) independent from the rest of the parent tree and letting the time drift apart from the parent tree.
 
-### Dangers
-Always null-check persistent references on entering a new function.
+### Composite jobs/root jobs
+`jobs` provides one data structure inherited from `cc0::jobs::job` called `cc0::jobs::jobs` (plural) which acts as a composite job, or root job. This job class is mainly intended for use as a root node, but can be used as a node at any part in the tree as well. The main feature of `cc0::jobs::jobs` is that it will sleep execution to fit timings provided by the user, and will terminate itself if it has no enabled children.
 
-Spawning or killing children when the child itself is being spawned or killed is bad practice as infinite loops could easily be introduced.
+`cc0::jobs::jobs` adds these features inside a new, `root_tick`, function.
+```
+#include "jobs/jobs.h"
+
+class custom_job : public cc0::jobs::inherit<custom_job, cc0::jobs::job>
+{
+protected:
+	void on_tick(uint64_t) {
+		kill();
+	}
+};
+
+int main()
+{
+	cc0::jobs::jobs root;
+	root.add_child<custom_job>();
+	while (root.is_enabled()) {
+		root.root_tick();
+	}
+	return 0;
+}
+```
+
+It should be noted, that this set up is very similar to how the `run` function works with the exception that the `run` function attaches the child specified by the user.
+
+Setting maximum ticks per second and minimum ticks per second to 0 means that the job will execute in real-time, i.e. the actual duration of the tick will be passed to functions taking durations. This is the default setting unless the user specifically provides their own minimum and maximum ticks per second.
+
+Note that it is not recommended to specify timings for a `cc0::jobs::jobs` job that is not the root of the tree. While technically possible, such a set up will drift other parts of the tree out of sync with their intended tick rate.
+
+### Job state terminology
+awake
+enabled
+active
+killed
+
+### Event handling
+Each job has the capability to deal with events which are thrown from some other job in the job tree. Normally events come from either the parent job, or a child job, but could come from elsewhere.
+
+Events are defined as an identifying string passed to the target job together with a reference to the job emitting the event. Events trigger a registered callback in the target job. If no callback is registered (as is the default) nothing will happen. In order to subscribe (i.e. register a callback) to an event `listen` should be used.
+```
+#include "jobs/jobs.h"
+
+class listener : public cc0::jobs::inherit<listener,cc0::jobs::job>
+{
+private:
+	uint64_t m_custom_events_received;
+
+private:
+	void event_callback(cc0::jobs::job &sender) {
+		++m_custom_events_received;
+	}
+protected:
+	void on_birth( void ) {
+		listen<listener>("custom_event", &listener::event_callback);
+	}
+
+public:
+	listener( void ) : m_custom_events_received(0) {}
+};
+
+class sender : public cc0::jobs::inherit<sender,cc0::jobs::job>
+{
+protected:
+	void on_tick(uint64_t) {
+		notify_parent("custom_event");
+	}
+};
+```
+In the above example, instantiating a `sender` as a child under a `listener` will trigger `listener`'s `event_callback` function every time the `sender` object ticks.
+
+Notifications can be sent via `notify_parent` to the parent job, `notify_children` to all child jobs, or `notify_group` to all results from a query. However, using standard tree navigation the user can send event notifications to any job in the tree.
+
+Currently, only one callback can be registered per event. Note that only active jobs can react to events.
+
+Jobs can unsubscribe from events that were previously subscribed to using `ignore`:
+```
+#include "jobs/jobs.h"
+
+class listener : public cc0::jobs::inherit<listener,cc0::jobs::job>
+{
+private:
+	uint64_t m_custom_events_received;
+
+private:
+	void event_callback(cc0::jobs::job &sender) {
+		++m_custom_events_received;
+		ignore("custom_event")
+	}
+protected:
+	void on_birth( void ) {
+		listen<listener>("custom_event", &listener::event_callback);
+	}
+
+public:
+	listener( void ) : m_custom_events_received(0) {}
+};
+
+class sender : public cc0::jobs::inherit<sender,cc0::jobs::job>
+{
+protected:
+	void on_tick(uint64_t) {
+		notify_parent("custom_event");
+	}
+};
+```
+In the above example, instantiating a `sender` as a child under a `listener` will trigger `listener`'s `event_callback` function only once when the `sender` object ticks as the callback also unsubscribes from the event via `ignore`.
+
+## Dangers
+Always null-check persistent references on entering a new function.
 
 ## TODO
 * More and better documentation.
-* Manipulate query results, such as joining two lists together.
+* Join two query results together.
 * Too much nested namespaces for the end-user?
-* Better way of handling notifications between jobs, such as via a hash table or binary tree of functionality.
+* Registering multiple callbacks per event.
+* Removing only one subscribed event callback rather than all for a single event.
 * Better, pre-typecasted references.
 * Functional time scaling.
 * Add a good hash function for strings.

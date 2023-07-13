@@ -22,14 +22,14 @@ namespace cc0
 {
 	namespace jobs
 	{
-		/// @brief Generates a new UUID.
-		/// @return A new UUID.
-		uint64_t new_uuid( void );
-
 		/// @brief Definitions used within the library itself.
 		/// @note For internal use only. Everything inside this namespace could be subject to change without notice.
 		namespace internal
 		{
+			/// @brief Generates a new UUID.
+			/// @return A new UUID.
+			uint64_t new_uuid( void );
+
 			/// @brief The base class for basic RTTI within the package.
 			class rtti
 			{	
@@ -72,6 +72,66 @@ namespace cc0
 				/// @return The type ID of the object instance.
 				virtual uint64_t object_id( void ) const;
 			};
+
+			/// @brief A binary search tree mapping names of job class derivatives to functions instantiating them.
+			template < typename type_t >
+			class search_tree
+			{
+			private:
+				struct node
+				{
+					uint64_t     hash;
+					const char  *key;
+					type_t       value;
+					node        *lte;
+					node        *gt;
+				};
+
+			private:
+				node *m_root;
+			
+			private:
+				/// @brief Creates a has from the string.
+				/// @param s The string.
+				/// @return The hash.
+				uint64_t make_hash(const char *s) const;
+
+				/// @brief Compares two strings.
+				/// @param a A string.
+				/// @param b Another string.
+				/// @return True if the strings are exactly equal.
+				bool str_cmp(const char *a, const char *b) const;
+
+				/// @brief Deletes memory of specified node and sub-nodes.
+				/// @param n The node to delete.
+				void free_node(node *n);
+
+			public:
+				/// @brief Initializes search tree.
+				search_tree( void );
+
+				/// @brief Frees memory in search tree.
+				~search_tree( void );
+
+				/// @brief Returns an existing value if key exists, or adds a new key-value pair if it does not.
+				/// @param key The name of the job class derivative that will be used to call the instance function.
+				/// @param value The instance function that allocates memory for the specified job class derivative.
+				type_t *add(const char *key, const type_t &value);
+
+				/// @brief Returns a pointer to the value pointed to by the key.
+				/// @param key The key under which a value has been stored.
+				/// @return Pointer to the value pointed to by key. Null if the key is not detected.
+				type_t *get(const char *key);
+
+				/// @brief Returns a pointer to the value pointed to by the key.
+				/// @param key The key under which a value has been stored.
+				/// @return Pointer to the value pointed to by key. Null if the key is not detected.
+				const type_t *get(const char *key) const;
+
+				/// @brief Removes a key-value pair from the search tree. If the key does not exist the function does not do anything (i.e. safe to remove a non-existing key).
+				/// @param key The key under which a value has been stored.
+				void remove(const char *key);
+			};
 		}
 
 		/// @brief A helper class that will ensure a working in-house RTTI when inheriting from job classes.
@@ -80,7 +140,12 @@ namespace cc0
 		/// @note For RTTI to work, the user must indirectly inherit jobs and tasks via the inherit class.
 		template < typename self_t, typename base_t >
 		class inherit : public base_t
-		{	
+		{
+		private:
+			// TODO
+			// If I can solve for self_t::class_name then I think I do not need CC0_JOBS_REGISTER to register classes...
+			// const static int registered = cc0::jobs::job::register_job<self_t>(self_t::type_name());
+
 		protected:
 			/// @brief Returns the self referencing pointer if the provided type ID matches the class ID.
 			/// @param type_id The provided type ID.
@@ -124,59 +189,7 @@ namespace cc0
 			class factory
 			{
 			private:
-				/// @brief A binary search tree mapping names of job class derivatives to functions instantiating them.
-				class inventory
-				{
-				private:
-					struct node
-					{
-						uint64_t     key;
-						const char  *name;
-						instance_fn  instance;
-						node        *lte;
-						node        *gt;
-					};
-
-				private:
-					node *m_root;
-				
-				private:
-					/// @brief Creates a key from the string.
-					/// @param s The string.
-					/// @return The key.
-					uint64_t make_key(const char *s) const;
-
-					/// @brief Compares two strings.
-					/// @param a A string.
-					/// @param b Another string.
-					/// @return True if the strings are exactly equal.
-					bool str_cmp(const char *a, const char *b) const;
-
-					/// @brief Deletes memory of specified node and sub-nodes.
-					/// @param n The node to delete.
-					void free_node(node *n);
-
-				public:
-					/// @brief Initializes inventory.
-					inventory( void );
-
-					/// @brief Frees memory in inventory.
-					~inventory( void );
-
-					/// @brief Adds a new 
-					/// @param name The name of the job class derivative that will be used to call the instance function.
-					/// @param instance The instance function that allocates memory for the specified job class derivative.
-					/// @note If there is a key conflict a new node is added. The old one is not overwritten.
-					void add_job(const char *name, instance_fn instance);
-
-					/// @brief Allocates memory for the job class derivative with the specified name.
-					/// @param name The name of the job class derivative to allocate memory for.
-					/// @return Returns null when the specified job class derivative is not stored in the inventory.
-					cc0::jobs::internal::rtti *instance_job(const char *name);
-				};
-
-			private:
-				static inventory m_products;
+				static internal::search_tree<instance_fn> m_products;
 
 			public:
 				/// @brief Adds the job class derivative to the factory in order for it to be able to be instantiated later.
@@ -189,6 +202,60 @@ namespace cc0
 				/// @param name The name of the job class derivative to instantiate.
 				/// @return An allocated job class derivative based on the provided name. Null if there is no instantiation function for the provided name.
 				static job *instance_job(const char *name);
+			};
+
+			/// @brief A generic callback for member functions of all derivatives of jobs.
+			class base_callback
+			{
+			public:
+				/// @brief Virtual destructor.
+				virtual ~base_callback( void ) {}
+
+				/// @brief Calls the stored callback.
+				/// @param sender The sender.
+				virtual void operator()(job &sender) = 0;
+			};
+
+			/// @brief A generic member function callback.
+			template < typename job_t >
+			class event_callback : public base_callback
+			{
+			private:
+				job_t *m_self;
+				void (job_t::*m_memfn)(job&);
+
+			public:
+				/// @brief Constructor.
+				/// @param self  The object to call the member function from.
+				/// @param fn The member function.
+				event_callback(job_t *self, void (job_t::*fn)(job&));
+
+				/// @brief Call the callback.
+				/// @param sender The sender.
+				void operator()(job &sender);
+			};
+
+			/// @brief A memory managed callback. Automatically deletes on destruction.
+			class callback
+			{
+			private:
+				base_callback *m_callback;
+			
+			public:
+				/// @brief Constructs the object. Everything null.
+				callback( void );
+
+				/// @brief Destroys the object. Deletes the memory.
+				~callback( void );
+
+				/// @brief Allocates memory for a callback.
+				/// @param fn The callback function.
+				template < typename job_t >
+				void set(job_t *self, void (job_t::*fn)(job&));
+
+				/// @brief Calls the stored callback.
+				/// @param sender The sender.
+				void operator()(job &sender);
 			};
 
 		public:
@@ -359,20 +426,21 @@ namespace cc0
 			};
 
 		private:
-			job      *m_parent;
-			job      *m_sibling;
-			job      *m_child;
-			uint64_t  m_pid;
-			uint64_t  m_sleep_ns;
-			uint64_t  m_existed_for_ns;
-			uint64_t  m_active_for_ns;
-			uint64_t  m_existed_tick_count;
-			uint64_t  m_active_tick_count;
-			uint64_t  m_time_scale;
-			shared   *m_shared;
-			bool      m_enabled;
-			bool      m_kill;
-			bool      m_tick_lock;
+			job                             *m_parent;
+			job                             *m_sibling;
+			job                             *m_child;
+			uint64_t                         m_pid;
+			uint64_t                         m_sleep_ns;
+			uint64_t                         m_existed_for_ns;
+			uint64_t                         m_active_for_ns;
+			uint64_t                         m_existed_tick_count;
+			uint64_t                         m_active_tick_count;
+			uint64_t                         m_time_scale;
+			internal::search_tree<callback>  m_event_callbacks;
+			shared                          *m_shared;
+			bool                             m_enabled;
+			bool                             m_kill;
+			bool                             m_tick_lock;
 		
 		private:
 			/// @brief Generates a new, unique job ID. Just increments a counter.
@@ -403,6 +471,11 @@ namespace cc0
 			/// @param duration_ns The time elapsed.
 			void tick_children(uint64_t duration_ns);
 
+			/// @brief Pass an event to this job from a sender.
+			/// @param event The event string.
+			/// @param sender The sender.
+			void get_notified(const char *event, job &sender);
+
 			/// @brief Scales a time.
 			/// @param time The time to scale.
 			/// @param time_scale The fixed-point scale, shifted by 32 bits.
@@ -427,12 +500,6 @@ namespace cc0
 			/// @brief Called immediately when the job is killed.
 			/// @note There is no default behavior. This must be overloaded.
 			virtual void on_death( void );
-
-			/// @brief The function that jobes an incoming message via one of the notify functions.
-			/// @param event The event string.
-			/// @param sender The sender.
-			/// @note There is no default behavior. This must be overloaded.
-			virtual void on_message(const char *event, job *sender);
 
 		public:
 			/// @brief Initializes the job.
@@ -460,7 +527,22 @@ namespace cc0
 			void wake( void );
 
 			/// @brief Adds an event for the job to listen and respond to.
-			// void listen(const char *event_id);
+			/// @tparam job_t The sub-class the callback method is declared in.
+			/// @param event The event to listen to.
+			/// @param callback The member function to call when this job receives the event.
+			template < typename job_t >
+			void listen(const char *event, void (job_t::*callback)(job&));
+
+			/// @brief Stops listening to the named event.
+			/// @param event The event to stop listening to.
+			void ignore(const char *event);
+
+			/// @brief Stops calling a specified callback for a named event.
+			/// @tparam job_t The sub-class the callback method is declared in.
+			/// @param event The event to stop listening to.
+			/// @param callback The callback to no longer call.
+			template < typename job_t >
+			void ignore(const char *event, void (job_t::*callback)(job&));
 
 			/// @brief Adds a child to the job's list of children.
 			/// @tparam job_t The type of the child to add to the job.
@@ -516,7 +598,7 @@ namespace cc0
 
 			/// @brief Returns the job ID.
 			/// @return The job ID.
-			uint64_t get_pid( void ) const;
+			uint64_t get_job_id( void ) const;
 
 			/// @brief Notifies the parent of an event.
 			/// @param event The event string.
@@ -534,11 +616,11 @@ namespace cc0
 			/// @note Nothing will happen if the job is not active.
 			void notify_group(const char *event, job::query::results &group);
 
-			/// @brief Notify the job of an event.
+			/// @brief Notify the target job of an event.
 			/// @param event The event string.
-			/// @param sender The job sending the event.
+			/// @param target The target of the event.
 			/// @note Nothing will happen if the job is not active. 
-			void notify(const char *event, job *sender);
+			void notify(const char *event, job &target);
 
 			/// @brief Returns a safe reference that will automatically turn null if the job is deleted.
 			/// @return The reference.
@@ -737,17 +819,188 @@ uint64_t cc0::jobs::inherit<self_t,base_t>::object_id( void ) const
 	return type_id();
 }
 
+template < typename type_t >
+uint64_t cc0::jobs::internal::search_tree<type_t>::make_hash(const char *s) const
+{
+	// TODO Use a CRC hash instead...
+
+	uint64_t h = 0;
+	uint64_t i = 0;
+	while (s[i] != 0) {
+		h += uint64_t(s[i]) * (i+1);
+		++i;
+	}
+	return h;
+}
+
+template < typename type_t >
+bool cc0::jobs::internal::search_tree<type_t>::str_cmp(const char *a, const char *b) const
+{
+	while (*a != 0) {
+		if (*a != *b) { return false; }
+		++a;
+		++b;
+	}
+	return (*a == *b);
+}
+
+template < typename type_t >
+void cc0::jobs::internal::search_tree<type_t>::free_node(cc0::jobs::internal::search_tree<type_t>::node *n)
+{
+	if (n != nullptr) {
+		free_node(n->lte);
+		free_node(n->gt);
+		delete n;
+	}
+}
+
+template < typename type_t >
+cc0::jobs::internal::search_tree<type_t>::search_tree( void ) : m_root(nullptr) 
+{}
+
+template < typename type_t >
+cc0::jobs::internal::search_tree<type_t>::~search_tree( void )
+{
+	free_node(m_root);
+}
+
+template < typename type_t >
+type_t *cc0::jobs::internal::search_tree<type_t>::add(const char *key, const type_t &value)
+{
+	const uint64_t hash = make_hash(key);
+	node **n = &m_root;
+	while (*n != nullptr) {
+		if (hash <= (*n)->hash) {
+			if (hash == (*n)->hash && str_cmp(key, (*n)->key)) {
+				return &((*n)->value);
+			} else {
+				n = &((*n)->lte);
+			}
+		} else {
+			n = &((*n)->gt);
+		}
+	}
+	*n = new node{ hash, key, value, nullptr, nullptr };
+	return &((*n)->value);
+}
+
+template < typename type_t >
+type_t *cc0::jobs::internal::search_tree<type_t>::get(const char *key)
+{
+	const uint64_t hash = make_hash(key);
+	node *n = m_root;
+	while (n != nullptr) {
+		if (hash <= n->hash) {
+			if (hash == n->hash && str_cmp(key, n->key)) {
+				return &(n->value);
+			} else {
+				n = n->lte;
+			}
+		} else {
+			n = n->gt;
+		}
+	}
+	return nullptr;
+}
+
+template < typename type_t >
+const type_t *cc0::jobs::internal::search_tree<type_t>::get(const char *key) const
+{
+	const uint64_t hash = make_hash(key);
+	const node *n = m_root;
+	while (n != nullptr) {
+		if (hash <= n->hash) {
+			if (hash == n->hash && str_cmp(key, n->key)) {
+				return &(n->value);
+			} else {
+				n = n->lte;
+			}
+		} else {
+			n = n->gt;
+		}
+	}
+	return nullptr;
+}
+
+template < typename type_t >
+void cc0::jobs::internal::search_tree<type_t>::remove(const char *key)
+{	
+	const uint64_t hash = make_hash(key);
+
+	node *p = nullptr;
+	node *n = m_root;
+	uint64_t rel = 0;
+	
+	while (n != nullptr && n->hash != hash && !str_cmp(n->key, key)) {
+		p = n;
+		if (hash <= n->hash) {
+			n = n->lte;
+			rel = 1;
+		} else {
+			n = n->gt;
+			rel = 2;
+		}
+	}
+
+	if (n != nullptr) {
+		
+		const uint64_t child_count = (n->gt ? 1 : 0) + (n->lte ? 1 : 0);
+
+		if (child_count == 0) {
+			if (rel == 1)      { p->lte = nullptr; }
+			else if (rel == 2) { p->gt  = nullptr; }
+			else               { m_root = nullptr; }
+		} else if (child_count == 1) {
+			node *&c = n->gt ? n->gt : n->lte;
+			if (rel == 1)      { p->lte = c; }
+			else if (rel == 2) { p->gt  = c; }
+			else               { m_root = c; }
+			c = nullptr;
+		} else if (child_count == 2) {
+			node *c = n->gt;
+			while (c->lte != nullptr) {
+				c = c->lte;
+			}
+			if (rel == 1)      { p->lte = c; }
+			else if (rel == 2) { p->gt  = c; }
+			else               { m_root = c; }
+			c->lte = n->lte;
+			c->gt  = n->gt;
+			n->lte = nullptr;
+			n->gt  = nullptr;
+		}
+		delete n;
+	}
+}
+
 template < typename self_t, typename base_t >
 uint64_t cc0::jobs::inherit<self_t, base_t>::type_id( void )
 {
-	static const uint64_t id = cc0::jobs::new_uuid();
+	static const uint64_t id = cc0::jobs::internal::new_uuid();
 	return id;
 }
 
 template < typename job_t >
 void cc0::jobs::job::factory::register_job(const char *name)
 {
-	factory::m_products.add_job(name, job_t::instance);
+	factory::m_products.add(name, job_t::instance);
+}
+
+template < typename job_t >
+cc0::jobs::job::event_callback<job_t>::event_callback(job_t *self, void (job_t::*fn)(cc0::jobs::job&)) : m_self(self), m_memfn(fn)
+{}
+
+template < typename job_t >
+void cc0::jobs::job::event_callback<job_t>::operator()(cc0::jobs::job &sender)
+{
+	return (m_self->*m_memfn)(sender);
+}
+
+template < typename job_t >
+void cc0::jobs::job::callback::set(job_t *self, void (job_t::*fn)(cc0::jobs::job&))
+{
+	delete m_callback;
+	m_callback = new event_callback<job_t>(self, fn);
 }
 
 template < typename query_t >
@@ -768,6 +1021,23 @@ template < typename query_t >
 cc0::jobs::job::query::results cc0::jobs::job::query::results::filter_results( void )
 {
 	return filter_results<query_t>(query_t());
+}
+
+template < typename job_t >
+void cc0::jobs::job::listen(const char *event, void (job_t::*fn)(cc0::jobs::job&))
+{
+	job_t *self = cast<job_t>();
+	if (self != nullptr) {
+		callback *c = m_event_callbacks.add(event, callback());
+		c->set<job_t>(self, fn);
+	}
+}
+
+template < typename job_t >
+void cc0::jobs::job::ignore(const char *event, void (job_t::*callback)(cc0::jobs::job&))
+{
+	// TODO IMPL: Only one callback can be registered per event currently, so that must be changed before this becomes a useful feature
+	return;
 }
 
 template < typename job_t >
