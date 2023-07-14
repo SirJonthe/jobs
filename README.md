@@ -472,4 +472,3 @@ Always null-check persistent references on entering a new function.
 * Removing only one subscribed event callback rather than all for a single event.
 * Better, pre-typecasted references.
 * Functional time scaling.
-* Add a good hash function for strings.

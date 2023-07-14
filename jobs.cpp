@@ -42,6 +42,84 @@ uint64_t cc0::jobs::internal::rtti::object_id( void ) const
 	return type_id();
 }
 
+cc0::jobs::internal::crc32::table cc0::jobs::internal::crc32::m_table;
+
+cc0::jobs::internal::crc32::table::table( void )
+{
+	for (uint32_t i = 0; i < 256; ++i) {
+		m_table[i] = i;
+		for (uint32_t j = 0; j < 8; ++j) {
+			if (m_table[i] & 1) {
+				m_table[i] = 0xedb88320 ^ (m_table[i] >> 1);
+			} else {
+				m_table[i] >>= 1;
+			}
+		}
+	}
+}
+
+uint32_t cc0::jobs::internal::crc32::table::operator[](uint32_t i) const
+{
+	return m_table[i];
+}
+
+uint64_t cc0::jobs::internal::crc32::count_ch(const char *s) const
+{
+	uint64_t c = 0;
+	while (s[c++] != 0) {}
+	return c - 1;
+}
+
+void cc0::jobs::internal::crc32::ingest(const void *message, uint64_t byte_count)
+{
+	m_sum ^= 0xffffffff;
+	const uint8_t *m = (const uint8_t*)message;
+	for (uint64_t i = 0; i < byte_count; ++i) {
+		m_sum = m_table[(m_sum ^ m[i]) & 0xff] ^ (m_sum >> 8);
+	}
+	m_sum ^= 0xffffffff;
+}
+
+cc0::jobs::internal::crc32::crc32( void ) : m_sum(0)
+{}
+
+cc0::jobs::internal::crc32::crc32(const char *message) : crc32()
+{
+	ingest(message, count_ch(message));
+}
+
+cc0::jobs::internal::crc32::crc32(const void *message, uint64_t byte_count) : crc32()
+{
+	ingest(message, byte_count);
+}
+
+cc0::jobs::internal::crc32 &cc0::jobs::internal::crc32::operator()(const char *message)
+{
+	ingest(message, count_ch(message));
+	return *this;
+}
+
+cc0::jobs::internal::crc32 &cc0::jobs::internal::crc32::operator()(const void *message, uint64_t byte_count)
+{
+	ingest(message, byte_count);
+	return *this;
+}
+
+cc0::jobs::internal::crc32 cc0::jobs::internal::crc32::operator()(const char *message) const
+{
+	return crc32(*this)(message);
+}
+
+cc0::jobs::internal::crc32 cc0::jobs::internal::crc32::operator()(const void *message, uint64_t byte_count) const
+{
+	return crc32(*this)(message, byte_count);
+}
+
+cc0::jobs::internal::crc32::operator uint32_t( void ) const
+{
+	return m_sum;
+}
+
 cc0::jobs::job::ref::ref(cc0::jobs::job *p) : m_job(p), m_shared(p != nullptr ? p->m_shared : nullptr)
 {
 	if (m_shared != nullptr) {
@@ -254,11 +332,6 @@ bool cc0::jobs::job::query::operator()(const cc0::jobs::job &j) const
 	return true;
 }
 
-uint64_t cc0::jobs::job::new_pid( void )
-{
-	return cc0::jobs::internal::new_uuid();
-}
-
 void cc0::jobs::job::set_deleted( void )
 {
 	m_shared->deleted = true;
@@ -341,7 +414,7 @@ void cc0::jobs::job::on_death( void )
 
 cc0::jobs::job::job( void ) :
 	m_parent(nullptr), m_sibling(nullptr), m_child(nullptr),
-	m_pid(new_pid()),
+	m_job_id(cc0::jobs::internal::new_uuid()),
 	m_sleep_ns(0),
 	m_existed_for_ns(0), m_active_for_ns(0), m_existed_tick_count(0), m_active_tick_count(0),
 	m_time_scale(1 << 16),
@@ -495,7 +568,7 @@ bool cc0::jobs::job::is_inactive( void ) const
 
 uint64_t cc0::jobs::job::get_job_id( void ) const
 {
-	return m_pid;
+	return m_job_id;
 }
 
 void cc0::jobs::job::notify_parent(const char *event)
