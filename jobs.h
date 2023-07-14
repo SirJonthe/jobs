@@ -80,11 +80,11 @@ namespace cc0
 			private:
 				struct node
 				{
+					uint64_t     hash;
 					const char  *key;
-					type_t       value;
 					node        *lte;
 					node        *gt;
-					uint32_t     hash;
+					type_t       value;
 				};
 
 			private:
@@ -94,7 +94,7 @@ namespace cc0
 				/// @brief Creates a has from the string.
 				/// @param s The string.
 				/// @return The hash.
-				uint32_t make_hash(const char *s) const;
+				uint64_t make_hash(const char *s) const;
 
 				/// @brief Compares two strings.
 				/// @param a A string.
@@ -131,100 +131,6 @@ namespace cc0
 				/// @brief Removes a key-value pair from the search tree. If the key does not exist the function does not do anything (i.e. safe to remove a non-existing key).
 				/// @param key The key under which a value has been stored.
 				void remove(const char *key);
-			};
-
-			/// @brief A CRC32 hash generator.
-			class crc32
-			{
-			private:
-				/// @brief A structure containing a pre-computed table to generate CRC32 hashes with.
-				class table
-				{
-				private:
-					uint32_t m_table[256];
-				
-				public:
-					/// @brief Default constructur. Generates the values in the table.
-					table( void );
-
-					/// @brief Default copy constructor.
-					/// @param  NA The table to copy.
-					table(const table&) = default;
-
-					/// @brief Default assignment operator.
-					/// @param  NA The table to copy.
-					/// @return A reference to self.
-					table &operator=(const table&) = default;
-
-					/// @brief Returns a value at the specified index in the table.
-					/// @param i The index.
-					/// @return A value at the specified index in the table.
-					uint32_t operator[](uint32_t i) const;
-				};
-			
-			private:
-				uint32_t     m_sum;
-				static table m_table;
-			
-			private:
-				/// @brief Counts the number of characters in the string until a null terminator is found.
-				/// @param s The string.
-				/// @return The number of characters in the string before a null terminator is found.
-				uint64_t count_ch(const char *s) const;
-
-				/// @brief Ingests a message and updates the internal check sum.
-				/// @param message The message.
-				/// @param byte_count The number of bytes in the message.
-				void ingest(const void *message, uint64_t byte_count);
-
-			public:
-				/// @brief Default constructor.
-				crc32( void );
-
-				/// @brief Default copy constructor.
-				/// @param NA The object to copy.
-				crc32(const crc32&) = default;
-
-				/// @brief The default assignment operator.
-				/// @param NA THe object to copy.
-				/// @return A reference to self.
-				crc32 &operator=(const crc32&) = default;
-
-				/// @brief Constructor. Ingests a message and updates the internal check sum.
-				/// @param message The message.
-				/// @param byte_count The number of bytes in the message.
-				crc32(const char *message);
-
-				/// @brief Constructor. Ingests a message and updates the internal check sum.
-				/// @param message The message.
-				/// @param byte_count The number of bytes in the message.
-				crc32(const void *message, uint64_t byte_count);
-
-				/// @brief Ingests a message and updates the internal check sum.
-				/// @param message The message.
-				/// @return A reference to self.
-				crc32 &operator()(const char *message);
-
-				/// @brief Ingests a message and updates the internal check sum.
-				/// @param message The message.
-				/// @param byte_count The number of bytes in the message.
-				/// @return A reference to self.
-				crc32 &operator()(const void *message, uint64_t byte_count);
-				
-				/// @brief Copies the object, ingests a message, and updates the internal check sum in the copy.
-				/// @param message The message.
-				/// @return A copy of the object.
-				crc32 operator()(const char *message) const;
-
-				/// @brief Copies the object, ingests a message, and updates the internal check sum in the copy.
-				/// @param message The message.
-				/// @param byte_count The number of bytes in the message.
-				/// @return A copy of the object.
-				crc32 operator()(const void *message, uint64_t byte_count) const;
-
-				/// @brief Returns the check sum.
-				/// @return The check sum.
-				operator uint32_t( void ) const;
 			};
 		}
 
@@ -911,9 +817,14 @@ uint64_t cc0::jobs::inherit<self_t,base_t>::object_id( void ) const
 }
 
 template < typename type_t >
-uint32_t cc0::jobs::internal::search_tree<type_t>::make_hash(const char *s) const
+uint64_t cc0::jobs::internal::search_tree<type_t>::make_hash(const char *s) const
 {
-	return cc0::jobs::internal::crc32(s);
+	uint64_t sum = 0xcbf29ce484222325ULL;
+	for (uint64_t i = 0; s[i] != 0; ++i) {
+		sum ^= uint64_t(s[i]);
+		sum *= 0x100000001b3ULL;
+	}
+	return sum;
 }
 
 template < typename type_t >
@@ -950,7 +861,7 @@ cc0::jobs::internal::search_tree<type_t>::~search_tree( void )
 template < typename type_t >
 type_t *cc0::jobs::internal::search_tree<type_t>::add(const char *key, const type_t &value)
 {
-	const uint32_t hash = make_hash(key);
+	const uint64_t hash = make_hash(key);
 	node **n = &m_root;
 	while (*n != nullptr) {
 		if (hash <= (*n)->hash) {
@@ -963,14 +874,14 @@ type_t *cc0::jobs::internal::search_tree<type_t>::add(const char *key, const typ
 			n = &((*n)->gt);
 		}
 	}
-	*n = new node{ key, value, nullptr, nullptr, hash };
+	*n = new node{ hash, key, nullptr, nullptr, value };
 	return &((*n)->value);
 }
 
 template < typename type_t >
 type_t *cc0::jobs::internal::search_tree<type_t>::get(const char *key)
 {
-	const uint32_t hash = make_hash(key);
+	const uint64_t hash = make_hash(key);
 	node *n = m_root;
 	while (n != nullptr) {
 		if (hash <= n->hash) {
@@ -989,7 +900,7 @@ type_t *cc0::jobs::internal::search_tree<type_t>::get(const char *key)
 template < typename type_t >
 const type_t *cc0::jobs::internal::search_tree<type_t>::get(const char *key) const
 {
-	const uint32_t hash = make_hash(key);
+	const uint64_t hash = make_hash(key);
 	const node *n = m_root;
 	while (n != nullptr) {
 		if (hash <= n->hash) {
@@ -1008,7 +919,7 @@ const type_t *cc0::jobs::internal::search_tree<type_t>::get(const char *key) con
 template < typename type_t >
 void cc0::jobs::internal::search_tree<type_t>::remove(const char *key)
 {	
-	const uint32_t hash = make_hash(key);
+	const uint64_t hash = make_hash(key);
 
 	node *p = nullptr;
 	node *n = m_root;
