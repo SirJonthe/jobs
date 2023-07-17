@@ -143,9 +143,9 @@ namespace cc0
 		{
 		private:
 			// TODO
-			// If I can solve for self_t::class_name then I think I do not need CC0_JOBS_REGISTER to register classes...
+			// If I can solve for self_t::type_name then I think I do not need CC0_JOBS_REGISTER to register classes...
 			// I just need to declare a static const variable in the private section of each inherit instance and it should register itself...
-			// const static int registered = cc0::jobs::job::register_job<self_t>(self_t::class_name());
+			// const static int registered = cc0::jobs::job::register_job<self_t>(self_t::type_name());
 
 		protected:
 			/// @brief Returns the self referencing pointer if the provided type ID matches the class ID.
@@ -170,6 +170,10 @@ namespace cc0
 			/// @brief Returns the type ID of the object instance (polymorphic).
 			/// @return The type ID of the object instance.
 			uint64_t object_id( void ) const;
+
+			/// @brief Returns the custom name of the class.
+			/// @return The custom name of the class.
+			//static const char *type_name( void );
 		};
 
 		/// @brief An ease-of-use typedef for the function pointer signature used to instantiate job class derivatives.
