@@ -17,7 +17,7 @@ At its heart, this type of functionality is what you see in operating systems wi
 `jobs` is intended to be minimal. It does not depend on STL, nor any other external library. It contains only the minimum amount of functionality to provide useful data structures. It exposes only the functionality and data structures needed to attain its goal, and keeps the implementation details private.
 
 ## Usage
-`jobs` has one main class which the user will be interfacing most with, `cc0::jobs::job`. Additionally, the sub-class `cc0::jobs::jobs` provides some further refinements to the main class which makes it suitable as a root node, or compound node, in the job tree. Some ease-of-use functionality is provided to get going quickly, such as `cc0::jobs::run` which implements enough boiler plate code to just be able to make a single call to get the job tree executing. 
+`jobs` has one main class which the user will be interfacing most with, `cc0::jobs::job`. Additionally, the sub-class `cc0::jobs::fork` provides some further refinements to the main class which makes it suitable as a root node, or compound node, in the job tree. Some ease-of-use functionality is provided to get going quickly, such as `cc0::jobs::run` which implements enough boiler plate code to just be able to make a single call to get the job tree executing. 
 
 ## Building
 No special adjustments need to be made to build `jobs` except enabling C++11 compatibility or above. Simply include the relevant headers in your code and make sure the headers and source files are available in your compiler search paths. Using `g++` as an example, building is no harder than:
@@ -53,7 +53,9 @@ protected:
 };
 CC0_JOBS_REGISTER(custom_job)
 ```
-Notice that the user must not directly inherit from the `job` base class, or any dirivative thereof, but instead do indirect inheritance via the `inherit` template class as with the example above. This ensures that in-house RTTI works.
+Notice that the user must not directly inherit from the `job` base class, or any dirivative thereof, but instead do indirect inheritance via the `inherit` template class as with the example above. This ensures that in-house RTTI works. The user must also ensure to make a call to CC0_JOBS_REGISTER with the newly created class name in order to ensure that type and object names are properly stored inside the new job class, as well as enable instantiation via the string version of the class names.
+
+The second parameter in the `inherit` template is an optional parameter that is class `job` by default, making passing the parameter example above redundant. All examples below will include the parameter however to clarify that the inheritance is done from the base `job` class.
 
 In order for jobs to run, the user must later instantiate jobs and add them to a job tree. See below examples.
 
@@ -352,9 +354,9 @@ CC0_JOBS_REGISTER(timescaled_job)
 Local time scaling (i.e. time dilation) is not properly supported at the moment. The idea is for each job to keep its own time and the programmer would be able to slow down or speed up its execution (including the execution of its children) independent from the rest of the parent tree and letting the time drift apart from the parent tree.
 
 ### Composite jobs/root jobs
-`jobs` provides one data structure inherited from `cc0::jobs::job` called `cc0::jobs::jobs` (plural) which acts as a composite job, or root job. This job class is mainly intended for use as a root node, but can be used as a node at any part in the tree as well. The main feature of `cc0::jobs::jobs` is that it will sleep execution to fit timings provided by the user, and will terminate itself if it has no enabled children.
+`jobs` provides one data structure inherited from `cc0::jobs::job` called `cc0::jobs::fork` which acts as a composite job, or root job. This job class is mainly intended for use as a root node, but can be used as a node at any part in the tree as well. The main feature of `cc0::jobs::fork` is that it will sleep execution to fit timings provided by the user, and will terminate itself if it has no enabled children.
 
-`cc0::jobs::jobs` adds these features inside a new, `root_tick`, function.
+`cc0::jobs::fork` adds these features inside a new, `root_tick`, function.
 ```
 #include "jobs/jobs.h"
 
@@ -368,7 +370,7 @@ protected:
 
 int main()
 {
-	cc0::jobs::jobs root;
+	cc0::jobs::fork root;
 	root.add_child<custom_job>();
 	while (root.is_enabled()) {
 		root.root_tick();
@@ -381,7 +383,7 @@ It should be noted, that this set up is very similar to how the `run` function w
 
 Setting maximum ticks per second and minimum ticks per second to 0 means that the job will execute in real-time, i.e. the actual duration of the tick will be passed to functions taking durations. This is the default setting unless the user specifically provides their own minimum and maximum ticks per second.
 
-Note that it is not recommended to specify timings for a `cc0::jobs::jobs` job that is not the root of the tree. While technically possible, such a set up will drift other parts of the tree out of sync with their intended tick rate.
+Note that it is not recommended to specify timings for a `cc0::jobs::fork` job that is not the root of the tree. While technically possible, such a set up will drift other parts of the tree out of sync with their intended tick rate.
 
 ### Job state terminology
 awake

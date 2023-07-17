@@ -647,7 +647,7 @@ uint64_t cc0::jobs::job::count_decendants( void ) const
 	return c;
 }
 
-void cc0::jobs::jobs::kill_if_disabled_children( void )
+void cc0::jobs::fork::kill_if_disabled_children( void )
 {
 	cc0::jobs::job *c = get_child();
 	while (c != nullptr) {
@@ -661,18 +661,18 @@ void cc0::jobs::jobs::kill_if_disabled_children( void )
 	}
 }
 
-void cc0::jobs::jobs::on_tick(uint64_t)
+void cc0::jobs::fork::on_tick(uint64_t)
 {
 	m_tick_start_ns = std::chrono::high_resolution_clock::now().time_since_epoch().count();
 	kill_if_disabled_children();
 }
 
-void cc0::jobs::jobs::on_tock(uint64_t)
+void cc0::jobs::fork::on_tock(uint64_t)
 {
 	adjust_duration(std::chrono::high_resolution_clock::now().time_since_epoch().count() - m_tick_start_ns);
 }
 
-void cc0::jobs::jobs::adjust_duration(uint64_t tick_timing_ns)
+void cc0::jobs::fork::adjust_duration(uint64_t tick_timing_ns)
 {
 	if (tick_timing_ns < m_min_duration_ns) {
 		const uint64_t max_sleep = 1000000000 / m_min_duration_ns;
@@ -688,27 +688,27 @@ void cc0::jobs::jobs::adjust_duration(uint64_t tick_timing_ns)
 	}
 }
 
-cc0::jobs::jobs::jobs( void ) :
+cc0::jobs::fork::fork( void ) :
 	inherit(),
 	m_min_duration_ns(0), m_max_duration_ns(0),
 	m_duration_ns(m_min_duration_ns)
 {}
 
-cc0::jobs::jobs::jobs(uint64_t min_ticks_per_sec, uint64_t max_ticks_per_sec) :
+cc0::jobs::fork::fork(uint64_t min_ticks_per_sec, uint64_t max_ticks_per_sec) :
 	inherit(),
 	m_min_duration_ns(1000000000 / min_ticks_per_sec), m_max_duration_ns(1000000000 / max_ticks_per_sec),
 	m_tick_start_ns(0),
 	m_duration_ns(m_min_duration_ns)
 {}
 
-void cc0::jobs::jobs::root_tick( void )
+void cc0::jobs::fork::root_tick( void )
 {
 	tick(m_duration_ns);
 }
 
 void cc0::jobs::run(const char *name)
 {
-	cc0::jobs::jobs j;
+	cc0::jobs::fork j;
 	j.add_child(name);
 	while (j.is_enabled()) {
 		j.root_tick();

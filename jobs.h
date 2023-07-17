@@ -730,7 +730,7 @@ namespace cc0
 		CC0_JOBS_REGISTER(job)
 
 		/// @brief A job node that monitors its children and kills execution when there are no remaining children.
-		class jobs : public inherit<jobs, job>
+		class fork : public inherit<fork, job>
 		{
 		private:
 			uint64_t m_min_duration_ns;
@@ -757,17 +757,17 @@ namespace cc0
 
 		public:
 			/// @brief  Default constructor. No tick limits.
-			jobs( void );
+			fork( void );
 			
 			/// @brief Constructs the tree with tick limits.
 			/// @param min_ticks_per_sec The minimum number of ticks that will be performed per second. If the jobes do not hit the target, the durations are clipped to a second divided by the minimum.
 			/// @param max_ticks_per_sec The maximum number of ticks that will be performed per second. If the jobes exceed the target the job and its children sleeps.
-			jobs(uint64_t min_ticks_per_sec, uint64_t max_ticks_per_sec);
+			fork(uint64_t min_ticks_per_sec, uint64_t max_ticks_per_sec);
 
 			/// @brief A version of tick that terminates the job if it has no enabled children, and adjusts durations fed to children based on execution time and specified limits of the duration.
 			void root_tick( void );
 		};
-		CC0_JOBS_REGISTER(jobs)
+		CC0_JOBS_REGISTER(fork)
 
 		/// @brief Spawns a root job node and attaches the specified initial job as a child to that node, then continues execution until the root node no longer has any children.
 		/// @tparam init_job_t The initial job to attach as a child to the root node.
