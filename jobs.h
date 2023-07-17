@@ -541,8 +541,8 @@ namespace cc0
 			/// @tparam job_t The sub-class the callback method is declared in.
 			/// @param event The event to stop listening to.
 			/// @param callback The callback to no longer call.
-			template < typename job_t >
-			void ignore(const char *event, void (job_t::*callback)(job&));
+			//template < typename job_t >
+			//void ignore(const char *event, void (job_t::*callback)(job&));
 
 			/// @brief Adds a child to the job's list of children.
 			/// @tparam job_t The type of the child to add to the job.
@@ -1036,12 +1036,12 @@ void cc0::jobs::job::listen(const char *event, void (job_t::*fn)(cc0::jobs::job&
 	}
 }
 
-template < typename job_t >
-void cc0::jobs::job::ignore(const char *event, void (job_t::*callback)(cc0::jobs::job&))
-{
-	// TODO IMPL: Only one callback can be registered per event currently, so that must be changed before this becomes a useful feature
-	return;
-}
+//template < typename job_t >
+//void cc0::jobs::job::ignore(const char *event, void (job_t::*callback)(cc0::jobs::job&))
+//{
+//	// TODO IMPL: Only one callback can be registered per event currently, so that must be changed before this becomes a useful feature
+//	return;
+//}
 
 template < typename job_t >
 job_t *cc0::jobs::job::add_child( void )
