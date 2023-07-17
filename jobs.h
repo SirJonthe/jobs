@@ -1085,7 +1085,7 @@ bool cc0::jobs::job::register_job(const char *name)
 template < typename init_job_t >
 void cc0::jobs::run( void )
 {
-	cc0::jobs::jobs j;
+	cc0::jobs::fork j;
 	j.add_child<init_job_t>();
 	while (j.is_enabled()) {
 		j.tick(0);
