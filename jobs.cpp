@@ -42,6 +42,16 @@ uint64_t cc0::jobs::internal::rtti::object_id( void ) const
 	return type_id();
 }
 
+const char *cc0::jobs::internal::rtti::object_name( void ) const
+{
+	return type_name();
+}
+
+const char *cc0::jobs::internal::rtti::type_name( void )
+{
+	return "rtti";
+}
+
 cc0::jobs::job::ref::ref(cc0::jobs::job *p) : m_job(p), m_shared(p != nullptr ? p->m_shared : nullptr)
 {
 	if (m_shared != nullptr) {
@@ -114,14 +124,6 @@ cc0::jobs::job *cc0::jobs::job::ref::get_job( void )
 const cc0::jobs::job *cc0::jobs::job::ref::get_job( void ) const
 {
 	return m_shared != nullptr && !m_shared->deleted ? m_job : nullptr;
-}
-
-cc0::jobs::internal::search_tree<cc0::jobs::instance_fn> cc0::jobs::job::factory::m_products = cc0::jobs::internal::search_tree<cc0::jobs::instance_fn>();
-
-cc0::jobs::job *cc0::jobs::job::factory::instance_job(const char *name)
-{
-	instance_fn *i = m_products.get(name);
-	return (i != nullptr) ? (*i)()->cast<cc0::jobs::job>() : nullptr;
 }
 
 cc0::jobs::job::callback::callback( void ) : m_callback(nullptr)
@@ -253,6 +255,8 @@ bool cc0::jobs::job::query::operator()(const cc0::jobs::job &j) const
 {
 	return true;
 }
+
+cc0::jobs::internal::search_tree<cc0::jobs::instance_fn> cc0::jobs::job::m_products = cc0::jobs::internal::search_tree<cc0::jobs::instance_fn>();
 
 void cc0::jobs::job::set_deleted( void )
 {
@@ -435,7 +439,8 @@ void cc0::jobs::job::ignore(const char *event)
 
 cc0::jobs::job *cc0::jobs::job::add_child(const char *name)
 {
-	return factory::instance_job(name);
+	instance_fn *i = m_products.get(name);
+	return (i != nullptr) ? (*i)()->cast<cc0::jobs::job>() : nullptr;
 }
 
 void cc0::jobs::job::enable( void )

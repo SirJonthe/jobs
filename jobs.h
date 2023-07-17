@@ -22,6 +22,8 @@ namespace cc0
 {
 	namespace jobs
 	{
+		class job; // Forward declaration.
+
 		/// @brief Definitions used within the library itself.
 		/// @note For internal use only. Everything inside this namespace could be subject to change without notice.
 		namespace internal
@@ -32,7 +34,7 @@ namespace cc0
 
 			/// @brief The base class for basic RTTI within the package.
 			class rtti
-			{	
+			{
 			protected:
 				/// @brief Returns the self referencing pointer if the provided type ID matches the class ID.
 				/// @param type_id The provided type ID.
@@ -71,6 +73,14 @@ namespace cc0
 				/// @brief Returns the type ID of the object instance (polymorphic).
 				/// @return The type ID of the object instance.
 				virtual uint64_t object_id( void ) const;
+
+				/// @brief Returns the type name of the object instance (polymorphic).
+				/// @return The type name of the object instance.
+				virtual const char *object_name( void ) const;
+
+				/// @brief Returns the type name of this specific class.
+				/// @return The type name of this specific class.
+				static const char *type_name( void );
 			};
 
 			/// @brief A binary search tree mapping names of job class derivatives to functions instantiating them.
@@ -138,14 +148,13 @@ namespace cc0
 		/// @tparam self_t The derived class.
 		/// @tparam base_t The class derived from (must itself be a derivative of jobs::inherit).
 		/// @note For RTTI to work, the user must indirectly inherit jobs and tasks via the inherit class.
-		template < typename self_t, typename base_t >
+		template < typename self_t, typename base_t = cc0::jobs::job >
 		class inherit : public base_t
 		{
+			friend class job;
+
 		private:
-			// TODO
-			// If I can solve for self_t::type_name then I think I do not need CC0_JOBS_REGISTER to register classes...
-			// I just need to declare a static const variable in the private section of each inherit instance and it should register itself...
-			// const static int registered = cc0::jobs::job::register_job<self_t>(self_t::type_name());
+			static const char *m_type_name;
 
 		protected:
 			/// @brief Returns the self referencing pointer if the provided type ID matches the class ID.
@@ -171,10 +180,16 @@ namespace cc0
 			/// @return The type ID of the object instance.
 			uint64_t object_id( void ) const;
 
+			/// @brief Returns the custom name of the object instance (polymorphic).
+			/// @return The custom name of the object instance.
+			const char *object_name( void ) const;
+
 			/// @brief Returns the custom name of the class.
 			/// @return The custom name of the class.
-			//static const char *type_name( void );
+			static const char *type_name( void );
 		};
+		template < typename self_t, typename base_t >
+		const char *inherit<self_t,base_t>::m_type_name = "";
 
 		/// @brief An ease-of-use typedef for the function pointer signature used to instantiate job class derivatives.
 		typedef cc0::jobs::internal::rtti* (*instance_fn)(void);
@@ -188,25 +203,6 @@ namespace cc0
 			{
 				uint64_t watchers;
 				bool     deleted;
-			};
-
-			/// @brief A class capable of instantiating jobs based on the name of the class string.
-			class factory
-			{
-			private:
-				static internal::search_tree<instance_fn> m_products;
-
-			public:
-				/// @brief Adds the job class derivative to the factory in order for it to be able to be instantiated later.
-				/// @tparam job_t The type of the job class derivative.
-				/// @param name The name of the job class derivative as a string that can later be used to call the instantiation function.
-				template < typename job_t >
-				static void register_job(const char *name);
-
-				/// @brief Calls the appropriate instantiation function based on the provided job class derivative name.
-				/// @param name The name of the job class derivative to instantiate.
-				/// @return An allocated job class derivative based on the provided name. Null if there is no instantiation function for the provided name.
-				static job *instance_job(const char *name);
 			};
 
 			/// @brief A generic callback for member functions of all derivatives of jobs.
@@ -429,6 +425,9 @@ namespace cc0
 				/// @note Override this with custom behavior to create custom filters for searches. 
 				virtual bool operator()(const job &j) const;
 			};
+
+		private:
+			static internal::search_tree<instance_fn> m_products;
 
 		private:
 			job                             *m_parent;
@@ -820,6 +819,18 @@ uint64_t cc0::jobs::inherit<self_t,base_t>::object_id( void ) const
 	return type_id();
 }
 
+template < typename self_t, typename base_t >
+const char *cc0::jobs::inherit<self_t,base_t>::object_name( void ) const
+{
+	return type_name();
+}
+
+template < typename self_t, typename base_t >
+const char *cc0::jobs::inherit<self_t,base_t>::type_name( void )
+{
+	return m_type_name;
+}
+
 template < typename type_t >
 uint64_t cc0::jobs::internal::search_tree<type_t>::make_hash(const char *s) const
 {
@@ -979,12 +990,6 @@ uint64_t cc0::jobs::inherit<self_t, base_t>::type_id( void )
 }
 
 template < typename job_t >
-void cc0::jobs::job::factory::register_job(const char *name)
-{
-	factory::m_products.add(name, job_t::instance);
-}
-
-template < typename job_t >
 cc0::jobs::job::event_callback<job_t>::event_callback(job_t *self, void (job_t::*fn)(cc0::jobs::job&)) : m_self(self), m_memfn(fn)
 {}
 
@@ -1072,7 +1077,8 @@ cc0::jobs::job::query::results cc0::jobs::job::get_children( void )
 template < typename job_t >
 bool cc0::jobs::job::register_job(const char *name)
 {
-	factory::register_job<job_t>(name);
+	job_t::m_type_name = name;
+	m_products.add(name, job_t::instance);
 	return true;
 }
 
