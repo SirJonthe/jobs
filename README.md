@@ -422,10 +422,13 @@ Setting maximum ticks per second and minimum ticks per second to 0 means that th
 Note that it is not recommended to specify timings for a `cc0::jobs::fork` job that is not the root of the tree. While technically possible, such a set up will drift other parts of the tree out of sync with their intended tick rate.
 
 ### Job state terminology
-awake
-enabled
-active
-killed
+A job can be killed, i.e., marked for deletion (killed jobs are not immediately deleted as this could prove unsafe for other jobs that are still referencing the killed job). This will cease the job's main functionality such as ticking and event handling. A job that has been killed will be registered as such via the `is_killed` flag. Conversely, a job will register as alive via `is_alive` if it has not been killed. A job is killed via the `kill` function.
+
+A job may be enabled or disabled. When disabled, functions such as ticking and event handling are disabled. A job counts as enabled if its enabled flag is set to true. This state of the job can be checked via `is_enabled` and `is_disabled`. A job may be enabled via `enable` and disabled via `disable` functions. When a job has been killed, it will automatically count as disabled as well.
+
+Jobs may sleep for some given amount of time. Sleeping also prevents jobs' main functions from triggering, such as ticking and event handling. This state can be checked via `is_sleeping` and `is_awake`, and can be modified using `sleep` and `wake` respectively. Sleeping jobs will not register the job as disabled.
+
+Since there is overlap between a job being enabled and ... a catch-all concept of 'active' is introduced. A job is active if it is not killed, enabled, and awake. This state of the job can be checked via `is_active` and `is_inactive`.
 
 ### Event handling
 Each job has the capability to deal with events which are thrown from some other job in the job tree. Normally events come from either the parent job, or a child job, but could come from elsewhere.
