@@ -7,11 +7,19 @@
 #include <thread>
 #include "jobs.h"
 
+//
+// global
+//
+
 uint64_t cc0::jobs::internal::new_uuid( void )
 {
 	static uint64_t uuid = 0;
 	return uuid++;
 }
+
+//
+// rtti
+//
 
 void *cc0::jobs::internal::rtti::self(uint64_t type_id)
 {
@@ -52,79 +60,9 @@ const char *cc0::jobs::internal::rtti::type_name( void )
 	return "rtti";
 }
 
-cc0::jobs::job::ref::ref(cc0::jobs::job *p) : m_job(p), m_shared(p != nullptr ? p->m_shared : nullptr)
-{
-	if (m_shared != nullptr) {
-		++m_shared->watchers;
-	}
-}
-
-cc0::jobs::job::ref::ref(const cc0::jobs::job::ref &r) : ref()
-{
-	set_ref(r.m_job);
-}
-
-cc0::jobs::job::ref::ref(cc0::jobs::job::ref &&r) : m_job(r.m_job), m_shared(r.m_shared)
-{
-	r.m_job = nullptr;
-	r.m_shared = nullptr;
-}
-
-cc0::jobs::job::ref::~ref( void )
-{
-	release();
-}
-
-cc0::jobs::job::ref &cc0::jobs::job::ref::operator=(const cc0::jobs::job::ref &r)
-{
-	if (this != &r) {
-		set_ref(r.m_job);
-	}
-	return *this;
-}
-
-cc0::jobs::job::ref &cc0::jobs::job::ref::operator=(cc0::jobs::job::ref &&r)
-{
-	if (this != &r) {
-		set_ref(r.m_job);
-		r.m_job = nullptr;
-		r.m_shared = nullptr;
-	}
-	return *this;
-}
-
-void cc0::jobs::job::ref::set_ref(cc0::jobs::job *p)
-{
-	if (p != m_job) {
-		release();
-		if (p != nullptr) {
-			m_job = p;
-			m_shared = m_job->m_shared;
-		}
-	}
-}
-
-void cc0::jobs::job::ref::release( void )
-{
-	if (m_shared != nullptr) {
-		--m_shared->watchers;
-		if (m_shared->watchers == 0 && m_shared->deleted) {
-			delete m_shared;
-		}
-	}
-	m_job = nullptr;
-	m_shared = nullptr;
-}
-
-cc0::jobs::job *cc0::jobs::job::ref::get_job( void )
-{
-	return m_shared != nullptr && !m_shared->deleted ? m_job : nullptr;
-}
-
-const cc0::jobs::job *cc0::jobs::job::ref::get_job( void ) const
-{
-	return m_shared != nullptr && !m_shared->deleted ? m_job : nullptr;
-}
+//
+// callback
+//
 
 cc0::jobs::job::callback::callback( void ) : m_callback(nullptr)
 {}
@@ -141,6 +79,10 @@ void cc0::jobs::job::callback::operator()(cc0::jobs::job &sender)
 	}
 }
 
+//
+// result
+//
+
 cc0::jobs::job::query::result::result(cc0::jobs::job &j) : m_job(j.get_ref()), m_next(nullptr)
 {}
 
@@ -150,7 +92,12 @@ cc0::jobs::job::query::result::~result( void )
 	m_next = nullptr;
 }
 
-cc0::jobs::job::ref &cc0::jobs::job::query::result::get_job( void )
+cc0::jobs::job::ref<> &cc0::jobs::job::query::result::get_job( void )
+{
+	return m_job;
+}
+
+const cc0::jobs::job::ref<> &cc0::jobs::job::query::result::get_job( void ) const
 {
 	return m_job;
 }
@@ -174,6 +121,36 @@ cc0::jobs::job::query::result *cc0::jobs::job::query::result::remove( void )
 	m_next = nullptr;
 	delete this;
 	return next;
+}
+
+//
+// results
+//
+
+void cc0::jobs::job::query::results::insert_and_increment(cc0::jobs::internal::search_tree<join_node,const cc0::jobs::job*> &t, cc0::jobs::job::query::results &r)
+{
+	result *i = r.get_results();
+	while (i != nullptr) {
+		join_node *n = t.get(i->get_job().get_job());
+		if (n != nullptr) {
+			++n->count;
+		} else {
+			t.add(i->get_job().get_job(), join_node{ i->get_job().get_job(), 1 });
+		}
+		i = i->get_next();
+	}
+}
+
+void cc0::jobs::job::query::results::remove_and_decrement(cc0::jobs::internal::search_tree<join_node,const cc0::jobs::job*> &t, cc0::jobs::job::query::results &r)
+{
+	result *i = r.get_results();
+	while (i != nullptr) {
+		join_node *n = t.get(i->get_job().get_job());
+		if (n != nullptr) {
+			--n->count;
+		}
+		i = i->get_next();
+	}
 }
 
 cc0::jobs::job::query::results::results( void ) : m_first(nullptr), m_end(&m_first)
@@ -248,6 +225,88 @@ cc0::jobs::job::query::results cc0::jobs::job::query::results::filter_results(co
 	return r;
 }
 
+cc0::jobs::job::query::results cc0::jobs::job::query::results::join_and(cc0::jobs::job::query::results &a, cc0::jobs::job::query::results &b)
+{
+	internal::search_tree<join_node,const job*> t;
+	insert_and_increment(t, a);
+	insert_and_increment(t, b);
+	results res;
+	struct accum
+	{
+		results *r;
+		accum(results *res) : r(res) {}
+		void operator()(join_node &n) {
+			if (n.count >= 2) {
+				r->add_result(*n.value);
+			}
+		}
+	} fn(&res);
+	t.traverse(fn);
+	return res;
+}
+
+cc0::jobs::job::query::results cc0::jobs::job::query::results::join_or(cc0::jobs::job::query::results &a, cc0::jobs::job::query::results &b)
+{
+	internal::search_tree<join_node,const job*> t;
+	insert_and_increment(t, a);
+	insert_and_increment(t, b);
+	results res;
+	struct accum
+	{
+		results *r;
+		accum(results *res) : r(res) {}
+		void operator()(join_node &n) {
+			r->add_result(*n.value);
+		}
+	} fn(&res);
+	t.traverse(fn);
+	return res;
+}
+
+cc0::jobs::job::query::results cc0::jobs::job::query::results::join_sub(cc0::jobs::job::query::results &l, cc0::jobs::job::query::results &r)
+{
+	internal::search_tree<join_node,const job*> t;
+	insert_and_increment(t, l);
+	remove_and_decrement(t, r);
+	results res;
+	struct accum
+	{
+		results *r;
+		accum(results *res) : r(res) {}
+		void operator()(join_node &n) {
+			if (n.count == 1) {
+				r->add_result(*n.value);
+			}
+		}
+	} fn(&res);
+	t.traverse(fn);
+	return res;
+}
+
+cc0::jobs::job::query::results cc0::jobs::job::query::results::join_xor(cc0::jobs::job::query::results &a, cc0::jobs::job::query::results &b)
+{
+	internal::search_tree<join_node,const job*> t;
+	insert_and_increment(t, a);
+	insert_and_increment(t, b);
+	results res;
+	struct accum
+	{
+		results *r;
+		accum(results *res) : r(res) {}
+		void operator()(join_node &n) {
+			if (n.count == 1) {
+				r->add_result(*n.value);
+			}
+		}
+	} fn(&res);
+	t.traverse(fn);
+	return res;
+}
+
+//
+// query
+//
+
 cc0::jobs::job::query::~query( void )
 {}
 
@@ -255,6 +314,10 @@ bool cc0::jobs::job::query::operator()(const cc0::jobs::job &j) const
 {
 	return true;
 }
+
+//
+// job
+//
 
 cc0::jobs::internal::search_tree<cc0::jobs::instance_fn> cc0::jobs::job::m_products = cc0::jobs::internal::search_tree<cc0::jobs::instance_fn>();
 
@@ -526,9 +589,9 @@ void cc0::jobs::job::notify(const char *event, cc0::jobs::job &target)
 	target.get_notified(event, *this);
 }
 
-cc0::jobs::job::ref cc0::jobs::job::get_ref( void )
+cc0::jobs::job::ref<> cc0::jobs::job::get_ref( void )
 {
-	return ref(this);
+	return ref<job>(this);
 }
 
 uint64_t cc0::jobs::job::get_existed_for( void ) const
@@ -647,6 +710,10 @@ uint64_t cc0::jobs::job::count_decendants( void ) const
 	return c;
 }
 
+//
+// fork
+//
+
 void cc0::jobs::fork::kill_if_disabled_children( void )
 {
 	cc0::jobs::job *c = get_child();
@@ -705,6 +772,10 @@ void cc0::jobs::fork::root_tick( void )
 {
 	tick(m_duration_ns);
 }
+
+//
+// global
+//
 
 void cc0::jobs::run(const char *name)
 {

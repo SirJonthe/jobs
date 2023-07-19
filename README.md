@@ -30,12 +30,12 @@ g++ -std=c++11 code.cpp jobs/jobs.cpp
 
 ## Examples
 ### Creating and registering custom jobs
-In and by themselves, jobs do not perform much meaningful work in relation to the user. Because of this, it is necessary to use inheritance in C++ and overload virtual functions inside the jobs in order for them to perform useful tasks. The user may also "register" the name of such a custom job so that the user later than instantiate that same job using only its name as a string.
+In and by themselves, jobs do not perform much meaningful work in relation to the user. Because of this, it is necessary to use inheritance in C++ and overload virtual functions inside the jobs in order for them to perform useful tasks. Using the provided macros `CC0_JOBS_NEW` for deriving from the base `cc0::jobs::job` class or `CC0_JOBS_DERIVE` to derive from a derivative of the base `cc0::jobs::job` class ensures that the in-house RTTI works as well as enabling instantiation via class name string by registering the class name with a global factory pattern class.
 ```
 #include <iostream>
 #include "jobs/jobs.h"
 
-class custom_job : public cc0::jobs::inherit<custom_job, cc0::jobs::job>
+CC0_JOBS_NEW(custom_job)
 {
 protected:
 	void on_tick(uint64_t duration_ns) { // Called every time the parent's `tick` function is called, before the job's childrens' `tick` is called.
@@ -51,12 +51,7 @@ protected:
 		std::cout << '-';
 	}
 };
-CC0_JOBS_REGISTER(custom_job)
 ```
-Notice that the user must not directly inherit from the `job` base class, or any dirivative thereof, but instead do indirect inheritance via the `inherit` template class as with the example above. This ensures that in-house RTTI works. The user must also ensure to make a call to CC0_JOBS_REGISTER with the newly created class name in order to ensure that type and object names are properly stored inside the new job class, as well as enable instantiation via the string version of the class names.
-
-The second parameter in the `inherit` template is an optional parameter that is class `job` by default, making passing the parameter example above redundant. All examples below will include the parameter however to clarify that the inheritance is done from the base `job` class.
-
 In order for jobs to run, the user must later instantiate jobs and add them to a job tree. See below examples.
 
 ### Adding children
@@ -65,7 +60,7 @@ Jobs are actually arranged as trees with one root job. Child jobs can be used to
 #include <iostream>
 #include "jobs/jobs.h"
 
-class custom_child : public cc0::jobs::inherit<custom_child, cc0::jobs::job>
+CC0_JOBS_NEW(custom_child)
 {
 public:
 	int attribute;
@@ -76,9 +71,8 @@ protected:
 		std::cout << "Child welcomed!" << std::endl;
 	}
 };
-CC0_JOBS_REGISTER(custom_child)
 
-class custom_parent : public cc0::jobs::inherit<custom_parent, cc0::jobs::job>
+CC0_JOBS_NEW(custom_parent)
 {
 protected:
 	void on_birth( void ) {
@@ -89,7 +83,6 @@ protected:
 
 	}
 };
-CC0_JOBS_REGISTER(custom_parent)
 ```
 
 Try not to rely on what order children are arranged in. Only know that they execute after their parent's `on_tick` function, but before their parent's `on_tock` function.
@@ -101,7 +94,7 @@ The `run` function provides the user with an easy-to-use function containing boi
 #include <iostream>
 #include "jobs/jobs.h"
 
-class printer : public cc0::jobs::inherit<printer, cc0::jobs::job>
+CC0_JOBS_NEW(class printer)
 {
 protected:
 	void on_birth( void ) {
@@ -112,7 +105,6 @@ protected:
 		std::cout << "Good bye, cruel world!" << std::endl;
 	}
 };
-CC0_JOBS_REGISTER(printer)
 
 int main()
 {
@@ -159,12 +151,65 @@ Note that `get_child` only returns the first child in the job's list of children
 ### Type information at runtime (RTTI)
 The library mainly passes jobs around as pointers to the base class `job`. However, using the in-house RTTI the user can cast pointers to their proper types:
 ```
-#include <iostream>
 #inlude "jobs/jobs.h"
 
-class custom_job : public cc0::jobs::inherit<custom_job, cc0::jobs::job>
-{};
-CC0_JOBS_REGISTER(custom_job)
+CC0_JOBS_NEW(custom_parent)
+{
+protected:
+	void on_tock(uint64_t) {
+		kill();
+	}
+};
+
+CC0_JOBS_NEW(custom_child)
+{
+protected:
+	void on_tick(uint64_t) {
+		custom_parent *parent = get_parent()->cast<custom_parent>();
+	}
+};
+
+int main()
+{
+	custom_parent root;
+	root.add_child<custom_child>();
+	while (root.is_enabled()) {
+		root.tick(0);
+	}
+	return 0;
+}
+```
+Note that `cast` will return null when a type fails to convert to the requested type.
+
+The same can be done with the safer `ref` class where casting a reference down relies on compile-time knowledge of the inheritance tree and will generate errors when in violation, while casting a reference up can be done via `cast`:
+```
+#inlude "jobs/jobs.h"
+
+CC0_JOBS_NEW(custom_parent)
+{
+protected:
+	void on_tock(uint64_t) {
+		kill();
+	}
+};
+
+CC0_JOBS_NEW(custom_child)
+{
+protected:
+	void on_tick(uint64_t) {
+		cc0::jobs::job::ref<custom_parent> parent = get_parent()->get_ref().cast<custom_parent>();
+	}
+};
+
+int main()
+{
+	custom_parent root;
+	root.add_child<custom_child>();
+	while (root.is_enabled()) {
+		root.tick(0);
+	}
+	return 0;
+}
 ```
 
 ### Searching for jobs using queries
@@ -177,7 +222,7 @@ bool only_enabled(const cc0::jobs::job &j)
 	return j.is_enabled(); // The search criteria, i.e. the job must have existed for 1000 miliseconds.
 };
 
-class custom_job : public cc0::jobs::inherit<custom_job, cc0::jobs::job>
+CC0_JOBS_NEW(custom_job)
 {
 protected:
 	void on_birth( void ) {
@@ -191,7 +236,6 @@ protected:
 		kill();
 	}
 };
-CC0_JOBS_REGISTER(custom_job)
 
 int main()
 {
@@ -205,16 +249,15 @@ Once a result is returned, the result can be further filtered using `filter_resu
 
 `get_children` provides the user with a query that is common, i.e. selecting children of a certain type. This is just a convenience function that wraps already existing functionality, but nevertheless proves to make code more readable when performing a common task.
 ```
-class custom_job : public cc0::jobs::inherit<custom_job, cc0::jobs::job>
+CC0_JOBS_NEW(custom_job)
 {
 protected:
 	void on_birth( void ) {
 		cc0::jobs::job::query::results r = get_children<custom_job>();
 	}
 };
-CC0_JOBS_REGISTER(custom_job)
 ```
-Queries should not use the provided methods for inheritance that would otherwise apply for jobs (i.e. `cc0::jobs::inherit`). The same goes for registering (i.e. `CC0_JOBS_REGISTER`), which should not be done for queries.
+Queries should not use the provided methods for inheritance that would otherwise apply for jobs (i.e. `cc0::jobs::inherit`, `CC0_JOBS_NEW`, or `CC0_JOBS_DERIVE`).
 
 There are a few optional ways to apply queries:
 
@@ -230,7 +273,7 @@ public:
 ```
 Filtering is then done via:
 ```
-class custom_job : public cc0::jobs::inherit<custom_job, cc0::jobs::job>
+CC0_JOBS_NEW(custom_job)
 {
 protected:
 	void on_birth( void ) {
@@ -238,7 +281,6 @@ protected:
 		cc0::jobs::job::query::results r = filter_children(q).filter_results(q);
 	}
 };
-CC0_JOBS_REGISTER(custom_job)
 ```
 
 Templates can also be used to apply filters in a more looser manner that does not require the user to inherit a base class:
@@ -256,7 +298,7 @@ bool custom_query_function(const cc0::jobs::job &j)
 	return j.is_enabled();
 }
 
-class custom_job : public cc0::jobs::inherit<custom_job, cc0::jobs::job>
+CC0_JOBS_NEW(custom_job)
 {
 protected:
 	void on_birth( void ) {
@@ -264,7 +306,6 @@ protected:
 		cc0::jobs::job::query::results r = filter_children(ftor).filter_results(custom_query_function);
 	}
 };
-CC0_JOBS_REGISTER(custom_job)
 ```
 
 Custom queries can be invoked in two ways when using templates; One way by explicitly instantiating the query object is passing it as a reference, which is useful when objects require some attributes to be set before executing the query, and specifying its type as a template parameter and implicitly instantiating it. The example above shows explicit instantiation, while the one below shows implicit:
@@ -277,14 +318,13 @@ public:
 	}
 };
 
-class custom_job : public cc0::jobs::inherit<custom_job, cc0::jobs::job>
+CC0_JOBS_NEW(custom_job)
 {
 protected:
 	void on_birth( void ) {
 		cc0::jobs::job::query::results r = filter_children<custom_query_functor>().filter_results<custom_query_functor>();
 	}
 };
-CC0_JOBS_REGISTER(custom_job)
 ```
 
 ### Referencing an existing job
@@ -294,7 +334,7 @@ Any job can access any other job in the tree. Any job may also expire at any tim
 #include <iostream>
 #include "jobs/jobs.h"
 
-class custom_job : cc0::jobs::inherit<custom_job, cc0::jobs::job>
+CC0_JOBS_NEW(custom_job)
 {
 private:
 	cc0::jobs::job::ref m_child; // A persistent reference.
@@ -313,7 +353,6 @@ protected:
 		}
 	}
 };
-CC0_JOBS_REGISTER(custom_job)
 ```
 
 As long as the job tree is executing on a single thread a reference to another job can be said to be valid for the duration of the current function call. If the programmer extends the job tree execution to be across multiple treads. In out-of-the-box functionality, references are mainly useful when a job references another job in a persistent manner, i.e. across multiple executions of the job tree.
@@ -324,7 +363,7 @@ As long as the job tree is executing on a single thread a reference to another j
 ```
 #include "jobs/jobs.h"
 
-class timescaled_job : public cc0::jobs::job::inherit<timescaled_job,cc0::jobs::job>
+CC0_JOBS_NEW(timescaled_job)
 {
 private:
 	struct V3 { double x, y, x; };
@@ -348,19 +387,16 @@ protected:
 		m_pos.z += m_ups.z * delta_time;
 	}
 };
-CC0_JOBS_REGISTER(timescaled_job)
 ```
 
 Local time scaling (i.e. time dilation) is not properly supported at the moment. The idea is for each job to keep its own time and the programmer would be able to slow down or speed up its execution (including the execution of its children) independent from the rest of the parent tree and letting the time drift apart from the parent tree.
 
 ### Composite jobs/root jobs
-`jobs` provides one data structure inherited from `cc0::jobs::job` called `cc0::jobs::fork` which acts as a composite job, or root job. This job class is mainly intended for use as a root node, but can be used as a node at any part in the tree as well. The main feature of `cc0::jobs::fork` is that it will sleep execution to fit timings provided by the user, and will terminate itself if it has no enabled children.
-
-`cc0::jobs::fork` adds these features inside a new, `root_tick`, function.
+`jobs` provides one data structure inherited from `cc0::jobs::job` called `cc0::jobs::fork` which acts as a composite job, or root job. It is mainly intended for use as a root node, but can be used as a node at any part in the tree as well. Its main feature is that it will sleep execution to fit timings provided by the user, and will terminate itself if it has no enabled children. These features reside inside a new, `root_tick`, function.
 ```
 #include "jobs/jobs.h"
 
-class custom_job : public cc0::jobs::inherit<custom_job, cc0::jobs::job>
+CC0_JOBS_NEW(custom_job)
 {
 protected:
 	void on_tick(uint64_t) {
@@ -398,7 +434,7 @@ Events are defined as an identifying string passed to the target job together wi
 ```
 #include "jobs/jobs.h"
 
-class listener : public cc0::jobs::inherit<listener,cc0::jobs::job>
+CC0_JOBS_NEW(listener)
 {
 private:
 	uint64_t m_custom_events_received;
@@ -416,7 +452,7 @@ public:
 	listener( void ) : m_custom_events_received(0) {}
 };
 
-class sender : public cc0::jobs::inherit<sender,cc0::jobs::job>
+CC0_JOBS_NEW(sender)
 {
 protected:
 	void on_tick(uint64_t) {
@@ -434,7 +470,7 @@ Jobs can unsubscribe from events that were previously subscribed to using `ignor
 ```
 #include "jobs/jobs.h"
 
-class listener : public cc0::jobs::inherit<listener,cc0::jobs::job>
+CC0_JOBS_NEW(listener)
 {
 private:
 	uint64_t m_custom_events_received;
@@ -453,7 +489,7 @@ public:
 	listener( void ) : m_custom_events_received(0) {}
 };
 
-class sender : public cc0::jobs::inherit<sender,cc0::jobs::job>
+CC0_JOBS_NEW(sender)
 {
 protected:
 	void on_tick(uint64_t) {
@@ -463,14 +499,14 @@ protected:
 ```
 In the above example, instantiating a `sender` as a child under a `listener` will trigger `listener`'s `event_callback` function only once when the `sender` object ticks as the callback also unsubscribes from the event via `ignore`.
 
-## Dangers
-Always null-check persistent references on entering a new function.
+## Limitations
+`jobs` is not trivially threadable in an effective manner since any job may read or write to any other job.
+
+`jobs` does not necessarily group jobs of the same type together to aid the compiler emitting SIMD instructions, since jobs are executed in depth-first order rather than by type.
+
+Due to how different C++ compilers work, it may be necessary to use a job class in some way before it will be automatically registered with the job factory (the data structure responsible for enabling job class instantiation via identifier string) since C++ does not guarantee that global static variables are initialized before `main`. This issue may present itself as the failure to instantiate a class via its identifier string (returns null on allocation) even though the job class has been registered in-code since the compiler has deferred running that code to some point after the attempted instantiation.
 
 ## TODO
-* More and better documentation.
-* Join two query results together.
-* Too much nested namespaces for the end-user?
 * Registering multiple callbacks per event.
 * Removing only one subscribed event callback rather than all for a single event.
-* Better, pre-typecasted references.
 * Functional time scaling.

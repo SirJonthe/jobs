@@ -9,14 +9,18 @@
 
 #include <cstdint>
 
-/// @brief Provides an easy way to register the name of a job class so that it can be allocated via a string later.
-/// @param job_name The class name of the class derived from the job class to register.
-/// @note The specified class name must be a class that at some stage in the chain has inherited from the main `job` class via the `inherit` class.
-/// @note Call this macro after right after declaring the class deriving from the job.
-/// @warning No special characters are allowed in the job name, so make sure to omit namespaces. This also means that the user needs to take care not to register different classes with the same name.
-/// @sa cc0::jobs::job
-/// @sa cc0::jobs::inherit
-#define CC0_JOBS_REGISTER(job_name) static const bool job_name##_registered = cc0::jobs::job::register_job<job_name>(#job_name);
+/// @brief Emits boiler-plate code for creating a new class of job that inherits from another class of job.
+/// @param job_name The name of the new class of job.
+/// @param base_type The name of the class of job to derive from.
+#define CC0_JOBS_DERIVE(job_name, base_type) \
+	class job_name; \
+	template <> struct cc0::jobs::internal::rtti::type_info<job_name> { static const char *name( void ) { return #job_name; } }; \
+	class job_name : public cc0::jobs::inherit<job_name, cc0::jobs::internal::rtti::type_info<job_name>, base_type>
+
+/// @brief Emits boiler-plate code for creating a new class of job that inherits from the default job base class.
+/// @param job_name The name of the new class of job.
+#define CC0_JOBS_NEW(job_name) \
+	CC0_JOBS_DERIVE(job_name, cc0::jobs::job)
 
 namespace cc0
 {
@@ -81,17 +85,27 @@ namespace cc0
 				/// @brief Returns the type name of this specific class.
 				/// @return The type name of this specific class.
 				static const char *type_name( void );
+
+				/// @brief Used to make template specializations in order to fetch the name of a type.
+				/// @tparam type_t The type.
+				/// @note This is a work-around for older C++ standards where immediate strings can not be passed as template parameters and the compiler/linker is sensitive to passing global char arrays as template parameters.
+				/// @note Every job type inheriting via the inherit class must, in a prior stage, create a template specialization from this using the to-be-declared class, and define a name() member function returning a const char* string containing the name of the to-be-declared class.
+				/// @warning This class should not be used directly by the user. CC0_JOBS_NEW and CC0_JOBS_DERIVE implicitly do all the work.
+				/// @sa cc0::jobs::inherit
+				/// @sa CC0_JOBS_NEW
+				/// @sa CC0_JOBS_DERIVE
+				template < typename type_t > struct type_info {};
 			};
 
 			/// @brief A binary search tree mapping names of job class derivatives to functions instantiating them.
-			template < typename type_t >
+			template < typename type_t, typename key_t = const char* >
 			class search_tree
 			{
 			private:
 				struct node
 				{
 					uint64_t     hash;
-					const char  *key;
+					key_t        key;
 					node        *lte;
 					node        *gt;
 					type_t       value;
@@ -102,19 +116,41 @@ namespace cc0
 			
 			private:
 				/// @brief Creates a has from the string.
+				/// @tparam k_t The key type.
+				/// @param s The string.
+				/// @return The hash.
+				template < typename k_t >
+				uint64_t make_hash(const k_t &s) const;
+
+				/// @brief Creates a has from the string.
 				/// @param s The string.
 				/// @return The hash.
 				uint64_t make_hash(const char *s) const;
+
+				/// @brief Compares two keys.
+				/// @tparam k_t The key type.
+				/// @param a A key.
+				/// @param b Another key.
+				/// @return True if the keys are exactly equal.
+				template < typename k_t >
+				bool kcmp(const k_t &a, const k_t &b) const;
 
 				/// @brief Compares two strings.
 				/// @param a A string.
 				/// @param b Another string.
 				/// @return True if the strings are exactly equal.
-				bool str_cmp(const char *a, const char *b) const;
+				bool kcmp(const char *a, const char *b) const;
 
 				/// @brief Deletes memory of specified node and sub-nodes.
 				/// @param n The node to delete.
 				void free_node(node *n);
+
+				/// @brief Walks the entire tree depth-first order and calls the provided function.
+				/// @tparam fn_t The function to call at each node in the tree, taking the value type as input.
+				/// @param fn The function.
+				/// @param n The node to traverse.
+				template < typename fn_t >
+				void traverse(fn_t &fn, node *n);
 
 			public:
 				/// @brief Initializes search tree.
@@ -126,35 +162,40 @@ namespace cc0
 				/// @brief Returns an existing value if key exists, or adds a new key-value pair if it does not.
 				/// @param key The name of the job class derivative that will be used to call the instance function.
 				/// @param value The instance function that allocates memory for the specified job class derivative.
-				type_t *add(const char *key, const type_t &value);
+				type_t *add(const key_t &key, const type_t &value);
 
 				/// @brief Returns a pointer to the value pointed to by the key.
 				/// @param key The key under which a value has been stored.
 				/// @return Pointer to the value pointed to by key. Null if the key is not detected.
-				type_t *get(const char *key);
+				type_t *get(const key_t &key);
 
 				/// @brief Returns a pointer to the value pointed to by the key.
 				/// @param key The key under which a value has been stored.
 				/// @return Pointer to the value pointed to by key. Null if the key is not detected.
-				const type_t *get(const char *key) const;
+				const type_t *get(const key_t &key) const;
 
 				/// @brief Removes a key-value pair from the search tree. If the key does not exist the function does not do anything (i.e. safe to remove a non-existing key).
 				/// @param key The key under which a value has been stored.
-				void remove(const char *key);
+				void remove(const key_t &key);
+
+				/// @brief Walks the entire tree depth-first order and calls the provided function.
+				/// @tparam fn_t The function to call at each node in the tree, taking the value type as input.
+				/// @param fn The function.
+				template < typename fn_t >
+				void traverse(fn_t &fn);
 			};
 		}
 
 		/// @brief A helper class that will ensure a working in-house RTTI when inheriting from job classes.
 		/// @tparam self_t The derived class.
+		/// @tparam self_type_name_t A class containing a function, name(), which returns the name of the current class as a string. This string can be used to instantiate this class via string.
 		/// @tparam base_t The class derived from (must itself be a derivative of jobs::inherit).
 		/// @note For RTTI to work, the user must indirectly inherit jobs and tasks via the inherit class.
-		template < typename self_t, typename base_t = cc0::jobs::job >
+		template < typename self_t, typename self_type_name_t, typename base_t = cc0::jobs::job >
 		class inherit : public base_t
 		{
-			friend class job;
-
 		private:
-			static const char *m_type_name;
+			static const bool m_registered;
 
 		protected:
 			/// @brief Returns the self referencing pointer if the provided type ID matches the class ID.
@@ -187,15 +228,17 @@ namespace cc0
 			/// @brief Returns the custom name of the class.
 			/// @return The custom name of the class.
 			static const char *type_name( void );
+
+			/// @brief Determines if the class has been registered so that it can be instantiated via a string.
+			/// @return True if registered. False if there is another class registered under the same name.
+			static bool is_registered( void );
 		};
-		template < typename self_t, typename base_t >
-		const char *inherit<self_t,base_t>::m_type_name = "";
 
 		/// @brief An ease-of-use typedef for the function pointer signature used to instantiate job class derivatives.
 		typedef cc0::jobs::internal::rtti* (*instance_fn)(void);
 
 		/// @brief A job. Updates itself and its children using custom code that can be inserted via overloading virtual functions within the class.
-		class job : public inherit<job, internal::rtti>
+		CC0_JOBS_DERIVE(job, internal::rtti)
 		{
 		private:
 			/// @brief Shared data used by automatic reference counting.
@@ -261,54 +304,81 @@ namespace cc0
 
 		public:
 			/// @brief Safely references a job. Will yield null if the referenced job has been destroyed.
+			/// @tparam job_t The base class of the reference. Defaults to the fundamental job.
+			template < typename job_t = cc0::jobs::job >
 			class ref
 			{
 				friend class job;
 
 			private:
-				job    *m_job;
+				job_t  *m_job;
 				shared *m_shared;
 			
 			public:
 				/// @brief Initializes the reference.
+				/// @tparam job2_t Type of the job pointer to reference.
 				/// @param p The job to reference.
-				explicit ref(job *p = nullptr);
+				template < typename job2_t >
+				explicit ref(job2_t *p = nullptr);
 
 				/// @brief Copy a reference.
+				/// @tparam job2_t Type of the job pointer to reference.
 				/// @param r The reference to copy.
-				ref(const ref &r);
+				template < typename job2_t >
+				ref(const ref<job2_t> &r);
 
 				/// @brief Move a reference.
+				/// @tparam job2_t Type of the job pointer to reference.
 				/// @param r The reference to move.
-				ref(ref &&r);
+				template < typename job2_t >
+				ref(ref<job2_t> &&r);
 				
 				/// @brief Destroys the reference.
 				~ref( void );
 
 				/// @brief Copy a reference.
+				/// @tparam job2_t Type of the job pointer to reference.
 				/// @param r The reference to copy.
 				/// @return The modified object.
-				ref &operator=(const ref &r);
+				template < typename job2_t >
+				ref &operator=(const ref<job2_t> &r);
 
 				/// @brief Move a reference.
+				/// @tparam job2_t Type of the job pointer to reference.
 				/// @param r The reference to move.
 				/// @return The modified object.
-				ref &operator=(ref &&r);
+				template < typename job2_t >
+				ref &operator=(ref<job2_t> &&r);
 
 				/// @brief References a new job.
+				/// @tparam job2_t Type of the job pointer to reference.
 				/// @param p The job to reference.
-				void set_ref(job *p);
+				template < typename job2_t >
+				void set_ref(job2_t *p);
 
 				/// @brief Releases the reference. Deletes the metadata memory if this is the last reference referencing it. 
 				void release( void );
 
 				/// @brief Returns the job.
 				/// @return The job. Null if the job has been deleted.
-				job *get_job( void );
+				job_t *get_job( void );
 
 				/// @brief Returns the job.
 				/// @return The job. Null if the job has been deleted.
-				const job *get_job( void ) const;
+				const job_t *get_job( void ) const;
+
+				/// @brief Casts the current reference to another.
+				/// @tparam job2_t Type of the job pointer to cast to.
+				template < typename job2_t >
+				ref<job2_t> cast( void );
+
+				/// @brief Returns the job.
+				/// @return The job. Null if the job has been deleted.
+				job_t *operator->( void );
+
+				/// @brief Returns the job.
+				/// @return The job. Null if the job has been deleted.
+				const job_t *operator->( void ) const;
 			};
 
 			/// @brief A search query containing a number of filters executed in sequence on the subject's children.
@@ -324,9 +394,9 @@ namespace cc0
 					friend class results;
 
 				private:
-					job::ref   m_job;
-					result    *m_next;
-					result   **m_prev;
+					job::ref<>   m_job;
+					result      *m_next;
+					result     **m_prev;
 				
 				public:
 					/// @brief Constructs a result.
@@ -338,11 +408,11 @@ namespace cc0
 					
 					/// @brief Returns the job stored in the result.
 					/// @return The job stored in the result.
-					job::ref &get_job( void );
+					job::ref<> &get_job( void );
 
 					/// @brief Returns the job stored in the result.
 					/// @return The job stored in the result.
-					const job::ref &get_job( void ) const;
+					const job::ref<> &get_job( void ) const;
 
 					/// @brief Returns the next result in the chain.
 					/// @return The next result in the chain.
@@ -360,7 +430,25 @@ namespace cc0
 				/// @brief All results from a search query.
 				class results
 				{
-				public:
+				private:
+					struct join_node
+					{
+						job     *value;
+						int64_t  count;
+					};
+
+				private:
+					/// @brief Inserts all results into a search tree. Duplicates are not stored, but instead tracked via a counter.
+					/// @param t The tree to insert the results into.
+					/// @param r The results to insert into the tree.
+					static void insert_and_increment(internal::search_tree<join_node,const job*> &t, results &r);
+
+					/// @brief Decrements all occurrences in the result list from the tree.
+					/// @param t The tree to decrement the results of.
+					/// @param r The results to decrement from the tree.
+					static void remove_and_decrement(internal::search_tree<join_node,const job*> &t, results &r);
+
+				private:
 					result  *m_first;
 					result **m_end;
 				
@@ -413,6 +501,35 @@ namespace cc0
 					/// @param q The query object.
 					/// @return The results of the filter.
 					results filter_results(const query &q);
+
+				public:
+					// TODO DOC
+					/// @brief 
+					/// @param a 
+					/// @param b 
+					/// @return 
+					static results join_and(results &a, results &b);
+
+					// TODO DOC
+					/// @brief 
+					/// @param a 
+					/// @param b 
+					/// @return 
+					static results join_or(results &a, results &b);
+
+					// TODO DOC
+					/// @brief 
+					/// @param l 
+					/// @param r 
+					/// @return 
+					static results join_sub(results &l, results &r);
+
+					// TODO DOC
+					/// @brief 
+					/// @param a 
+					/// @param b 
+					/// @return 
+					static results join_xor(results &a, results &b);
 				};
 
 			public:
@@ -537,13 +654,6 @@ namespace cc0
 			/// @param event The event to stop listening to.
 			void ignore(const char *event);
 
-			/// @brief Stops calling a specified callback for a named event.
-			/// @tparam job_t The sub-class the callback method is declared in.
-			/// @param event The event to stop listening to.
-			/// @param callback The callback to no longer call.
-			//template < typename job_t >
-			//void ignore(const char *event, void (job_t::*callback)(job&));
-
 			/// @brief Adds a child to the job's list of children.
 			/// @tparam job_t The type of the child to add to the job.
 			/// @return A pointer to the job that was added of the type of the added job.
@@ -551,9 +661,10 @@ namespace cc0
 			job_t *add_child( void );
 
 			/// @brief Adds a child to the job's list of children.
-			/// @param name The class name of the child to add to the job.
-			/// @return A pointer to the job that was added of the type of a generic job. Null if the name has not been registered using CC0_JOBS_REGISTER.
-			/// @sa CC0_JOBS_REGISTER
+			/// @param name The class name of the child to add to the job. This must correspond to the name registered when declaring the job.
+			/// @return A pointer to the job that was added of the type of a generic job. Null if the name has not been declared properly using CC0_JOBS_NEW or CC0_JOBS_DERIVE.
+			/// @sa CC0_JOBS_NEW
+			/// @sa CC0_JOBS_DERIVE
 			job *add_child(const char *name);
 
 			/// @brief Enables the job, allowing it to tick and call the death function.
@@ -624,7 +735,7 @@ namespace cc0
 
 			/// @brief Returns a safe reference that will automatically turn null if the job is deleted.
 			/// @return The reference.
-			ref get_ref( void );
+			ref<> get_ref( void );
 
 			/// @brief Gets the accumulated time the job has existed for.
 			/// @return The accumulated time (in nanoseconds) the job has existed for.
@@ -713,9 +824,10 @@ namespace cc0
 			/// @brief Adds the job class derivative to the factory in order for it to be able to be instantiated later.
 			/// @tparam job_t The type of the job class derivative.
 			/// @param name The name of the job class derivative as a string that can later be used to call the instantiation function.
-			/// @return Always true.
-			/// @note Do not use this function directly. Instead use CC0_JOBS_REGISTER.
-			/// @sa CC0_JOBS_REGISTER
+			/// @return True if the name and job were successfully registered. False if another job has already been registered under the provided name.
+			/// @note Do not use this function directly. Instead use CC0_JOBS_NEW or CC0_JOBS_DERIVE.
+			/// @sa CC0_JOBS_NEW
+			/// @sa CC0_JOBS_DERIVE
 			template < typename job_t >
 			static bool register_job(const char *name);
 
@@ -727,10 +839,9 @@ namespace cc0
 			/// @return The number of decendant jobs present under this parent.
 			uint64_t count_decendants( void ) const;
 		};
-		CC0_JOBS_REGISTER(job)
 
 		/// @brief A job node that monitors its children and kills execution when there are no remaining children.
-		class fork : public inherit<fork, job>
+		CC0_JOBS_NEW(fork)
 		{
 		private:
 			uint64_t m_min_duration_ns;
@@ -767,7 +878,6 @@ namespace cc0
 			/// @brief A version of tick that terminates the job if it has no enabled children, and adjusts durations fed to children based on execution time and specified limits of the duration.
 			void root_tick( void );
 		};
-		CC0_JOBS_REGISTER(fork)
 
 		/// @brief Spawns a root job node and attaches the specified initial job as a child to that node, then continues execution until the root node no longer has any children.
 		/// @tparam init_job_t The initial job to attach as a child to the root node.
@@ -778,10 +888,15 @@ namespace cc0
 		/// @brief Spawns a root job node and attaches the specified initial job as a child to that node, then continues execution until the root node no longer has any children.
 		/// @param name The name of the initial job to attach as a child to the root node.
 		/// @note The init job should set up everything for proper further execution of the jobs.
-		/// @sa CC0_JOBS_REGISTER
+		/// @sa CC0_JOBS_NEW
+		/// @sa CC0_JOBS_DERIVE
 		void run(const char *name);
 	}
 }
+
+//
+// rtti
+//
 
 template < typename type_t >
 type_t *cc0::jobs::internal::rtti::cast( void )
@@ -795,44 +910,25 @@ const type_t *cc0::jobs::internal::rtti::cast( void ) const
 	return reinterpret_cast<const type_t*>(self(type_t::type_id()));
 }
 
-template < typename self_t, typename base_t >
-void *cc0::jobs::inherit<self_t, base_t>::self(uint64_t type_id)
+//
+// search_tree
+//
+
+template < typename type_t, typename key_t >
+template < typename k_t >
+uint64_t cc0::jobs::internal::search_tree<type_t,key_t>::make_hash(const k_t &k) const
 {
-	return this->type_id() == type_id ? this : base_t::self(type_id);
+	const uint8_t *K = reinterpret_cast<const uint8_t*>(&k);
+	uint64_t sum = 0xcbf29ce484222325ULL;
+	for (uint64_t i = 0; i < sizeof(k_t); ++i) {
+		sum ^= uint64_t(K[i]);
+		sum *= 0x100000001b3ULL;
+	}
+	return sum;
 }
 
-template < typename self_t, typename base_t >
-const void *cc0::jobs::inherit<self_t, base_t>::self(uint64_t type_id) const
-{
-	return this->type_id() == type_id ? this : base_t::self(type_id);
-}
-
-template < typename self_t, typename base_t >
-cc0::jobs::internal::rtti *cc0::jobs::inherit<self_t,base_t>::instance( void )
-{
-	return new self_t;
-}
-
-template < typename self_t, typename base_t >
-uint64_t cc0::jobs::inherit<self_t,base_t>::object_id( void ) const
-{
-	return type_id();
-}
-
-template < typename self_t, typename base_t >
-const char *cc0::jobs::inherit<self_t,base_t>::object_name( void ) const
-{
-	return type_name();
-}
-
-template < typename self_t, typename base_t >
-const char *cc0::jobs::inherit<self_t,base_t>::type_name( void )
-{
-	return m_type_name;
-}
-
-template < typename type_t >
-uint64_t cc0::jobs::internal::search_tree<type_t>::make_hash(const char *s) const
+template < typename type_t, typename key_t >
+uint64_t cc0::jobs::internal::search_tree<type_t,key_t>::make_hash(const char *s) const
 {
 	uint64_t sum = 0xcbf29ce484222325ULL;
 	for (uint64_t i = 0; s[i] != 0; ++i) {
@@ -842,8 +938,20 @@ uint64_t cc0::jobs::internal::search_tree<type_t>::make_hash(const char *s) cons
 	return sum;
 }
 
-template < typename type_t >
-bool cc0::jobs::internal::search_tree<type_t>::str_cmp(const char *a, const char *b) const
+template < typename type_t, typename key_t >
+template < typename k_t >
+bool cc0::jobs::internal::search_tree<type_t,key_t>::kcmp(const k_t &a, const k_t &b) const
+{
+	const uint8_t *A = reinterpret_cast<const uint8_t*>(a);
+	const uint8_t *B = reinterpret_cast<const uint8_t*>(b);
+	for (uint32_t i = 0; i < sizeof(k_t); ++i) {
+		if (A[i] != B[i]) { return false; };
+	}
+	return true;
+}
+
+template < typename type_t, typename key_t >
+bool cc0::jobs::internal::search_tree<type_t,key_t>::kcmp(const char *a, const char *b) const
 {
 	while (*a != 0) {
 		if (*a != *b) { return false; }
@@ -853,8 +961,8 @@ bool cc0::jobs::internal::search_tree<type_t>::str_cmp(const char *a, const char
 	return (*a == *b);
 }
 
-template < typename type_t >
-void cc0::jobs::internal::search_tree<type_t>::free_node(cc0::jobs::internal::search_tree<type_t>::node *n)
+template < typename type_t, typename key_t >
+void cc0::jobs::internal::search_tree<type_t,key_t>::free_node(cc0::jobs::internal::search_tree<type_t,key_t>::node *n)
 {
 	if (n != nullptr) {
 		free_node(n->lte);
@@ -863,24 +971,35 @@ void cc0::jobs::internal::search_tree<type_t>::free_node(cc0::jobs::internal::se
 	}
 }
 
-template < typename type_t >
-cc0::jobs::internal::search_tree<type_t>::search_tree( void ) : m_root(nullptr) 
+template < typename type_t, typename key_t >
+template < typename fn_t >
+void cc0::jobs::internal::search_tree<type_t,key_t>::traverse(fn_t &fn, cc0::jobs::internal::search_tree<type_t,key_t>::node *n)
+{
+	if (n != nullptr) {
+		traverse(fn, n->lte);
+		fn(n->value);
+		traverse(fn, n->gt);
+	}
+}
+
+template < typename type_t, typename key_t >
+cc0::jobs::internal::search_tree<type_t,key_t>::search_tree( void ) : m_root(nullptr) 
 {}
 
-template < typename type_t >
-cc0::jobs::internal::search_tree<type_t>::~search_tree( void )
+template < typename type_t, typename key_t >
+cc0::jobs::internal::search_tree<type_t,key_t>::~search_tree( void )
 {
 	free_node(m_root);
 }
 
-template < typename type_t >
-type_t *cc0::jobs::internal::search_tree<type_t>::add(const char *key, const type_t &value)
+template < typename type_t, typename key_t >
+type_t *cc0::jobs::internal::search_tree<type_t,key_t>::add(const key_t &key, const type_t &value)
 {
 	const uint64_t hash = make_hash(key);
 	node **n = &m_root;
 	while (*n != nullptr) {
 		if (hash <= (*n)->hash) {
-			if (hash == (*n)->hash && str_cmp(key, (*n)->key)) {
+			if (hash == (*n)->hash && kcmp(key, (*n)->key)) {
 				return &((*n)->value);
 			} else {
 				n = &((*n)->lte);
@@ -893,14 +1012,14 @@ type_t *cc0::jobs::internal::search_tree<type_t>::add(const char *key, const typ
 	return &((*n)->value);
 }
 
-template < typename type_t >
-type_t *cc0::jobs::internal::search_tree<type_t>::get(const char *key)
+template < typename type_t, typename key_t >
+type_t *cc0::jobs::internal::search_tree<type_t,key_t>::get(const key_t &key)
 {
 	const uint64_t hash = make_hash(key);
 	node *n = m_root;
 	while (n != nullptr) {
 		if (hash <= n->hash) {
-			if (hash == n->hash && str_cmp(key, n->key)) {
+			if (hash == n->hash && kcmp(key, n->key)) {
 				return &(n->value);
 			} else {
 				n = n->lte;
@@ -912,14 +1031,14 @@ type_t *cc0::jobs::internal::search_tree<type_t>::get(const char *key)
 	return nullptr;
 }
 
-template < typename type_t >
-const type_t *cc0::jobs::internal::search_tree<type_t>::get(const char *key) const
+template < typename type_t, typename key_t >
+const type_t *cc0::jobs::internal::search_tree<type_t,key_t>::get(const key_t &key) const
 {
 	const uint64_t hash = make_hash(key);
 	const node *n = m_root;
 	while (n != nullptr) {
 		if (hash <= n->hash) {
-			if (hash == n->hash && str_cmp(key, n->key)) {
+			if (hash == n->hash && kcmp(key, n->key)) {
 				return &(n->value);
 			} else {
 				n = n->lte;
@@ -931,8 +1050,8 @@ const type_t *cc0::jobs::internal::search_tree<type_t>::get(const char *key) con
 	return nullptr;
 }
 
-template < typename type_t >
-void cc0::jobs::internal::search_tree<type_t>::remove(const char *key)
+template < typename type_t, typename key_t >
+void cc0::jobs::internal::search_tree<type_t,key_t>::remove(const key_t &key)
 {	
 	const uint64_t hash = make_hash(key);
 
@@ -940,7 +1059,7 @@ void cc0::jobs::internal::search_tree<type_t>::remove(const char *key)
 	node *n = m_root;
 	uint64_t rel = 0;
 	
-	while (n != nullptr && n->hash != hash && !str_cmp(n->key, key)) {
+	while (n != nullptr && n->hash != hash && !kcmp(n->key, key)) {
 		p = n;
 		if (hash <= n->hash) {
 			n = n->lte;
@@ -982,12 +1101,72 @@ void cc0::jobs::internal::search_tree<type_t>::remove(const char *key)
 	}
 }
 
-template < typename self_t, typename base_t >
-uint64_t cc0::jobs::inherit<self_t, base_t>::type_id( void )
+template < typename type_t, typename key_t >
+template < typename fn_t >
+void cc0::jobs::internal::search_tree<type_t,key_t>::traverse(fn_t &fn)
+{
+	traverse(fn, m_root);
+}
+
+//
+// inherit
+//
+
+template < typename self_t, typename self_type_name_t, typename base_t >
+const bool cc0::jobs::inherit<self_t,self_type_name_t,base_t>::m_registered = cc0::jobs::job::register_job<self_t>(cc0::jobs::inherit<self_t,self_type_name_t,base_t>::type_name());
+
+template < typename self_t, typename self_type_name_t, typename base_t >
+void *cc0::jobs::inherit<self_t,self_type_name_t,base_t>::self(uint64_t type_id)
+{
+	return this->type_id() == type_id ? this : base_t::self(type_id);
+}
+
+template < typename self_t, typename self_type_name_t, typename base_t >
+const void *cc0::jobs::inherit<self_t,self_type_name_t,base_t>::self(uint64_t type_id) const
+{
+	return this->type_id() == type_id ? this : base_t::self(type_id);
+}
+
+template < typename self_t, typename self_type_name_t, typename base_t >
+uint64_t cc0::jobs::inherit<self_t,self_type_name_t,base_t>::type_id( void )
 {
 	static const uint64_t id = cc0::jobs::internal::new_uuid();
 	return id;
 }
+
+template < typename self_t, typename self_type_name_t, typename base_t >
+cc0::jobs::internal::rtti *cc0::jobs::inherit<self_t,self_type_name_t,base_t>::instance( void )
+{
+	return new self_t;
+}
+
+template < typename self_t, typename self_type_name_t, typename base_t >
+uint64_t cc0::jobs::inherit<self_t,self_type_name_t,base_t>::object_id( void ) const
+{
+	return type_id();
+}
+
+template < typename self_t, typename self_type_name_t, typename base_t >
+const char *cc0::jobs::inherit<self_t,self_type_name_t,base_t>::object_name( void ) const
+{
+	return type_name();
+}
+
+template < typename self_t, typename self_type_name_t, typename base_t >
+const char *cc0::jobs::inherit<self_t,self_type_name_t,base_t>::type_name( void )
+{
+	return self_type_name_t::name();
+}
+
+template < typename self_t, typename self_type_name_t, typename base_t >
+bool cc0::jobs::inherit<self_t,self_type_name_t,base_t>::is_registered( void )
+{
+	return m_registered;
+}
+
+//
+// event_callback
+//
 
 template < typename job_t >
 cc0::jobs::job::event_callback<job_t>::event_callback(job_t *self, void (job_t::*fn)(cc0::jobs::job&)) : m_self(self), m_memfn(fn)
@@ -999,12 +1178,133 @@ void cc0::jobs::job::event_callback<job_t>::operator()(cc0::jobs::job &sender)
 	return (m_self->*m_memfn)(sender);
 }
 
+//
+// callback
+//
+
 template < typename job_t >
 void cc0::jobs::job::callback::set(job_t *self, void (job_t::*fn)(cc0::jobs::job&))
 {
 	delete m_callback;
 	m_callback = new event_callback<job_t>(self, fn);
 }
+
+//
+// ref
+//
+
+template < typename job_t >
+template < typename job2_t >
+cc0::jobs::job::ref<job_t>::ref(job2_t *p) : m_job(p), m_shared(p != nullptr ? p->m_shared : nullptr)
+{
+	if (m_shared != nullptr) {
+		++m_shared->watchers;
+	}
+}
+
+template < typename job_t >
+template < typename job2_t >
+cc0::jobs::job::ref<job_t>::ref(const cc0::jobs::job::ref<job2_t> &r) : ref()
+{
+	set_ref(r.m_job);
+}
+
+template < typename job_t >
+template < typename job2_t >
+cc0::jobs::job::ref<job_t>::ref(cc0::jobs::job::ref<job2_t> &&r) : m_job(r.m_job), m_shared(r.m_shared)
+{
+	r.m_job = nullptr;
+	r.m_shared = nullptr;
+}
+
+template < typename job_t >
+cc0::jobs::job::ref<job_t>::~ref( void )
+{
+	release();
+}
+
+template < typename job_t >
+template < typename job2_t >
+cc0::jobs::job::ref<job_t> &cc0::jobs::job::ref<job_t>::operator=(const cc0::jobs::job::ref<job2_t> &r)
+{
+	if (this != &r) {
+		set_ref(r.m_job);
+	}
+	return *this;
+}
+
+template < typename job_t >
+template < typename job2_t >
+cc0::jobs::job::ref<job_t> &cc0::jobs::job::ref<job_t>::operator=(cc0::jobs::job::ref<job2_t> &&r)
+{
+	if (this != &r) {
+		set_ref(r.m_job);
+		r.release();
+	}
+	return *this;
+}
+
+template < typename job_t >
+template < typename job2_t >
+void cc0::jobs::job::ref<job_t>::set_ref(job2_t *p)
+{
+	if (p != m_job) {
+		release();
+		if (p != nullptr) {
+			m_job = p;
+			m_shared = m_job->m_shared;
+			++m_shared->watchers;
+		}
+	}
+}
+
+template < typename job_t >
+void cc0::jobs::job::ref<job_t>::release( void )
+{
+	if (m_shared != nullptr) {
+		--m_shared->watchers;
+		if (m_shared->watchers == 0 && m_shared->deleted) {
+			delete m_shared;
+		}
+	}
+	m_job = nullptr;
+	m_shared = nullptr;
+}
+
+template < typename job_t >
+job_t *cc0::jobs::job::ref<job_t>::get_job( void )
+{
+	return m_shared != nullptr && !m_shared->deleted ? m_job : nullptr;
+}
+
+template < typename job_t >
+const job_t *cc0::jobs::job::ref<job_t>::get_job( void ) const
+{
+	return m_shared != nullptr && !m_shared->deleted ? m_job : nullptr;
+}
+
+template < typename job_t >
+template < typename job2_t >
+cc0::jobs::job::ref<job2_t> cc0::jobs::job::ref<job_t>::cast( void )
+{
+	return ref<job2_t>(m_job->template cast<job2_t>());
+}
+
+template < typename job_t >
+job_t *cc0::jobs::job::ref<job_t>::operator->( void )
+{
+	return m_job;
+}
+
+template < typename job_t >
+const job_t *cc0::jobs::job::ref<job_t>::operator->( void ) const
+{
+	return m_job;
+}
+
+//
+// results
+//
 
 template < typename query_t >
 cc0::jobs::job::query::results cc0::jobs::job::query::results::filter_results(const query_t &q)
@@ -1026,6 +1326,10 @@ cc0::jobs::job::query::results cc0::jobs::job::query::results::filter_results( v
 	return filter_results<query_t>(query_t());
 }
 
+//
+// job
+//
+
 template < typename job_t >
 void cc0::jobs::job::listen(const char *event, void (job_t::*fn)(cc0::jobs::job&))
 {
@@ -1035,13 +1339,6 @@ void cc0::jobs::job::listen(const char *event, void (job_t::*fn)(cc0::jobs::job&
 		c->set<job_t>(self, fn);
 	}
 }
-
-//template < typename job_t >
-//void cc0::jobs::job::ignore(const char *event, void (job_t::*callback)(cc0::jobs::job&))
-//{
-//	// TODO IMPL: Only one callback can be registered per event currently, so that must be changed before this becomes a useful feature
-//	return;
-//}
 
 template < typename job_t >
 job_t *cc0::jobs::job::add_child( void )
@@ -1077,10 +1374,16 @@ cc0::jobs::job::query::results cc0::jobs::job::get_children( void )
 template < typename job_t >
 bool cc0::jobs::job::register_job(const char *name)
 {
-	job_t::m_type_name = name;
+	if (m_products.get(name) != nullptr) {
+		return false;
+	}
 	m_products.add(name, job_t::instance);
 	return true;
 }
+
+//
+// global
+//
 
 template < typename init_job_t >
 void cc0::jobs::run( void )
