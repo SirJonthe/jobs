@@ -428,7 +428,7 @@ A job may be enabled or disabled. When disabled, functions such as ticking and e
 
 Jobs may sleep for some given amount of time. Sleeping also prevents jobs' main functions from triggering, such as ticking and event handling. This state can be checked via `is_sleeping` and `is_awake`, and can be modified using `sleep` and `wake` respectively. Sleeping jobs will not register the job as disabled.
 
-Since there is overlap between a job being enabled and ... a catch-all concept of 'active' is introduced. A job is active if it is not killed, enabled, and awake. This state of the job can be checked via `is_active` and `is_inactive`.
+Since there is overlap between a job being enabled/disabled, awake/asleep, and alive/killed a catch-all concept of 'active' is introduced. A job is active if it is alive, enabled, and awake. This state of the job can be checked via `is_active` and `is_inactive`.
 
 ### Event handling
 Each job has the capability to deal with events which are thrown from some other job in the job tree. Normally events come from either the parent job, or a child job, but could come from elsewhere.
