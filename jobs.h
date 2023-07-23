@@ -86,10 +86,10 @@ namespace cc0
 				/// @return The type name of this specific class.
 				static const char *type_name( void );
 
-				/// @brief Used to make template specializations in order to fetch the name of a type.
+				/// @brief Used to make template specializations in order to fetch the name of a type at compile-time.
 				/// @tparam type_t The type.
 				/// @note This is a work-around for older C++ standards where immediate strings can not be passed as template parameters and the compiler/linker is sensitive to passing global char arrays as template parameters.
-				/// @note Every job type inheriting via the inherit class must, in a prior stage, create a template specialization from this using the to-be-declared class, and define a name() member function returning a const char* string containing the name of the to-be-declared class.
+				/// @note Every job type inheriting via the inherit class must, in a prior stage, create a template specialization from this using the to-be-declared class, and define a static name() member function returning a const char* string containing the name of the to-be-declared class.
 				/// @warning This class should not be used directly by the user. CC0_JOBS_NEW and CC0_JOBS_DERIVE implicitly do all the work.
 				/// @sa cc0::jobs::inherit
 				/// @sa CC0_JOBS_NEW
@@ -104,11 +104,11 @@ namespace cc0
 			private:
 				struct node
 				{
-					uint64_t     hash;
-					key_t        key;
-					node        *lte;
-					node        *gt;
-					type_t       value;
+					uint64_t  hash;
+					key_t     key;
+					node     *lte;
+					node     *gt;
+					type_t    value;
 				};
 
 			private:
@@ -503,32 +503,32 @@ namespace cc0
 					results filter_results(const query &q);
 
 				public:
-					// TODO DOC
-					/// @brief 
-					/// @param a 
-					/// @param b 
-					/// @return 
+					/// @brief Takes two result lists and joins them together in a resulting list if an entry exists in both input lists (set intersection).
+					/// @param a One result list.
+					/// @param b Another result list.
+					/// @return The resulting list.
+					/// @note Any potential duplicates are only added once in the resulting list.
 					static results join_and(results &a, results &b);
 
-					// TODO DOC
-					/// @brief 
-					/// @param a 
-					/// @param b 
-					/// @return 
+					/// @brief Takes two result lists and joins all entries in both input lists together into a resulting list (set union).
+					/// @param a One result list.
+					/// @param b Another result list.
+					/// @return The resulting list.
+					/// @note Any potential duplicates are only added once in the resulting list.
 					static results join_or(results &a, results &b);
 
-					// TODO DOC
-					/// @brief 
-					/// @param l 
-					/// @param r 
-					/// @return 
+					/// @brief Adds the entries in the left input results list into a resulting list if the entry does not exist in the right input results list (set difference).
+					/// @param l Left result list.
+					/// @param r Right result list.
+					/// @return The resulting list.
+					/// @note Any potential duplicates are only added once in the resulting list.
 					static results join_sub(results &l, results &r);
 
-					// TODO DOC
-					/// @brief 
-					/// @param a 
-					/// @param b 
-					/// @return 
+					/// @brief Takes two result lists and joins them together in a resulting list if an entry is unique to only one of the input lists (set symmetric difference).
+					/// @param a One result list.
+					/// @param b Another result list.
+					/// @return The resulting list.
+					/// @note Any potential duplicates are only added once in the resulting list.
 					static results join_xor(results &a, results &b);
 				};
 
