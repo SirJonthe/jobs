@@ -11,6 +11,8 @@
 // global
 //
 
+#define NS_PER_SEC 1000000000ULL
+
 uint64_t cc0::jobs::internal::new_uuid( void )
 {
 	static uint64_t uuid = 0;
@@ -367,10 +369,10 @@ void cc0::jobs::job::delete_killed_children(cc0::jobs::job *&child)
 	}
 }
 
-void cc0::jobs::job::tick_children(uint64_t duration)
+void cc0::jobs::job::tick_children(uint64_t duration_ns)
 {
 	for (cc0::jobs::job *c = m_child; c != nullptr && is_active(); c = c->m_sibling) {
-		c->tick(duration);
+		c->tick(duration_ns);
 	}
 }
 
@@ -387,6 +389,12 @@ void cc0::jobs::job::get_notified(const char *event, cc0::jobs::job &sender)
 uint64_t cc0::jobs::job::scale_time(uint64_t time, uint64_t time_scale)
 {
 	return (time * time_scale) >> 16;
+}
+
+uint64_t cc0::jobs::job::adjust_duration(uint64_t duration_ns) const
+{
+	duration_ns = scale_time(duration_ns + m_duration_ns, m_time_scale);
+	return duration_ns < m_max_duration_ns ? duration_ns : m_max_duration_ns;
 }
 
 void cc0::jobs::job::on_tick(uint64_t duration)
@@ -406,6 +414,7 @@ cc0::jobs::job::job( void ) :
 	m_job_id(cc0::jobs::internal::new_uuid()),
 	m_sleep_ns(0),
 	m_existed_for_ns(0), m_active_for_ns(0), m_existed_tick_count(0), m_active_tick_count(0),
+	m_min_duration_ns(0), m_max_duration_ns(0), m_duration_ns(m_min_duration_ns),
 	m_time_scale(1 << 16),
 	m_event_callbacks(),
 	m_shared(new shared{ 0, false }),
@@ -426,39 +435,48 @@ cc0::jobs::job::~job( void )
 	}
 }
 
-void cc0::jobs::job::tick(uint64_t duration)
+void cc0::jobs::job::tick(uint64_t duration_ns)
 {
 	if (!m_tick_lock) {
 		m_tick_lock = true;
 
-		duration = scale_time(duration, m_time_scale);
-
-		m_existed_for_ns += duration;
+		duration_ns = adjust_duration(duration_ns);
+		
+		m_existed_for_ns += duration_ns;
 		++m_existed_tick_count;
+
 		if (is_sleeping()) {
-			if (m_sleep_ns <= duration) {
+			// TODO: Unsure if m_sleep_ns needs to be scaled or not...
+			if (m_sleep_ns <= duration_ns) {
 				m_sleep_ns = 0;
-				duration -= m_sleep_ns;
+				duration_ns -= m_sleep_ns;
 			} else {
-				m_sleep_ns -= duration;
-				duration = 0;
+				m_sleep_ns -= duration_ns;
+				duration_ns = 0;
 			}
 		}
 
-		if (is_active()) {
-			m_active_for_ns += duration;
-			++m_active_tick_count;
-			on_tick(duration);
+		if (duration_ns < m_min_duration_ns) {
+			m_duration_ns += duration_ns;
+			m_tick_lock = false;
+			return;
 		}
 
-		tick_children(duration);
+		if (is_active()) {
+			m_active_for_ns += duration_ns;
+			++m_active_tick_count;
+			on_tick(duration_ns);
+		}
+
+		tick_children(duration_ns);
 
 		delete_killed_children(m_child);
 
 		if (is_active()) {
-			on_tock(duration);
+			on_tock(duration_ns);
 		}
 
+		m_duration_ns = 0;
 		m_tick_lock = false;
 	}
 }
@@ -500,10 +518,19 @@ void cc0::jobs::job::ignore(const char *event)
 	m_event_callbacks.remove(event);
 }
 
-cc0::jobs::job *cc0::jobs::job::add_child(const char *name)
+cc0::jobs::job *cc0::jobs::job::add_child(const char *type_name)
 {
-	instance_fn *i = m_products.get(name);
-	return (i != nullptr) ? (*i)()->cast<cc0::jobs::job>() : nullptr;
+	cc0::jobs::job *p = nullptr;
+	if (!is_killed()) {
+		p = create_orphan(type_name);
+		if (p != nullptr) {
+			add_sibling(m_child, p);
+			p->m_min_duration_ns = m_min_duration_ns;
+			p->m_max_duration_ns = m_max_duration_ns;
+			p->on_birth();
+		}
+	}
+	return p;
 }
 
 void cc0::jobs::job::enable( void )
@@ -664,12 +691,12 @@ const cc0::jobs::job *cc0::jobs::job::get_root( void ) const
 
 void cc0::jobs::job::set_time_scale(float time_scale)
 {
-	m_time_scale = uint64_t(time_scale * (1 << 16));
+	m_time_scale = uint64_t(double(time_scale) * double(1 << 16));
 }
 
 float cc0::jobs::job::get_time_scale( void ) const
 {
-	return m_time_scale / float(1<<16);
+	return float(m_time_scale / double(1 << 16));
 }
 
 cc0::jobs::job::query::results cc0::jobs::job::filter_children(const cc0::jobs::job::query &q)
@@ -710,78 +737,98 @@ uint64_t cc0::jobs::job::count_decendants( void ) const
 	return c;
 }
 
-//
-// fork
-//
-
-void cc0::jobs::fork::kill_if_disabled_children( void )
+void cc0::jobs::job::limit_tick_interval(uint64_t min_duration_ns, uint64_t max_duration_ns)
 {
-	cc0::jobs::job *c = get_child();
-	while (c != nullptr) {
-		if (c->is_enabled()) {
-			break;
+	m_min_duration_ns = min_duration_ns < max_duration_ns ? min_duration_ns : max_duration_ns;
+	m_max_duration_ns = min_duration_ns > max_duration_ns ? min_duration_ns : max_duration_ns;
+}
+
+void cc0::jobs::job::unlimit_tick_interval( void )
+{
+	m_min_duration_ns = 0;
+	m_max_duration_ns = 0;
+}
+
+void cc0::jobs::job::limit_tick_rate(uint64_t min_ticks_per_sec, uint64_t max_ticks_per_sec)
+{
+	limit_tick_interval(NS_PER_SEC / max_ticks_per_sec, NS_PER_SEC / min_ticks_per_sec);
+}
+
+void cc0::jobs::job::unlimit_tick_rate( void )
+{
+	unlimit_tick_interval();
+}
+
+uint64_t cc0::jobs::job::get_min_duration_ns( void ) const
+{
+	return m_min_duration_ns;
+}
+
+uint64_t cc0::jobs::job::get_max_duration_ns( void ) const
+{
+	return m_max_duration_ns;
+}
+
+uint64_t cc0::jobs::job::get_min_tick_per_sec( void ) const
+{
+	return NS_PER_SEC / m_max_duration_ns;
+}
+
+uint64_t cc0::jobs::job::get_max_tick_per_sec( void ) const
+{
+	return NS_PER_SEC / m_min_duration_ns;
+}
+
+bool cc0::jobs::job::is_tick_limited( void ) const
+{
+	return m_min_duration_ns != 0 || m_max_duration_ns != 0;
+}
+
+cc0::jobs::job *cc0::jobs::job::create_orphan(const char *type_name)
+{
+	cc0::jobs::job *j = nullptr;
+	instance_fn *i = m_products.get(type_name);
+	if (i != nullptr) {
+		cc0::jobs::internal::rtti *r = (*i)();
+		if (r != nullptr) {
+			j = r->cast<cc0::jobs::job>();
+			if (j == nullptr) {
+				delete r;
+			}
+			return j;
 		}
+	}
+	return j;
+}
+
+bool cc0::jobs::job::has_enabled_children( void ) const
+{
+	const cc0::jobs::job *c = get_child();
+	while (c != nullptr && c->is_disabled()) {
 		c = c->get_sibling();
 	}
-	if (c == nullptr) {
-		kill();
-	}
-}
-
-void cc0::jobs::fork::on_tick(uint64_t)
-{
-	m_tick_start_ns = std::chrono::high_resolution_clock::now().time_since_epoch().count();
-	kill_if_disabled_children();
-}
-
-void cc0::jobs::fork::on_tock(uint64_t)
-{
-	adjust_duration(std::chrono::high_resolution_clock::now().time_since_epoch().count() - m_tick_start_ns);
-}
-
-void cc0::jobs::fork::adjust_duration(uint64_t tick_timing_ns)
-{
-	if (tick_timing_ns < m_min_duration_ns) {
-		const uint64_t max_sleep = 1000000000 / m_min_duration_ns;
-		const uint64_t sleep_ns = m_min_duration_ns - tick_timing_ns;
-		if (get_parent() == nullptr) {
-			std::this_thread::sleep_for(std::chrono::nanoseconds(sleep_ns < max_sleep ? sleep_ns : max_sleep));
-		} else {
-			sleep_for(sleep_ns < max_sleep ? sleep_ns : max_sleep);
-		}
-		m_duration_ns = m_min_duration_ns;
-	} else {
-		m_duration_ns = tick_timing_ns < m_max_duration_ns ? tick_timing_ns : m_max_duration_ns;
-	}
-}
-
-cc0::jobs::fork::fork( void ) :
-	inherit(),
-	m_min_duration_ns(0), m_max_duration_ns(0),
-	m_duration_ns(m_min_duration_ns)
-{}
-
-cc0::jobs::fork::fork(uint64_t min_ticks_per_sec, uint64_t max_ticks_per_sec) :
-	inherit(),
-	m_min_duration_ns(1000000000 / min_ticks_per_sec), m_max_duration_ns(1000000000 / max_ticks_per_sec),
-	m_tick_start_ns(0),
-	m_duration_ns(m_min_duration_ns)
-{}
-
-void cc0::jobs::fork::root_tick( void )
-{
-	tick(m_duration_ns);
+	return c != nullptr;
 }
 
 //
 // global
 //
 
-void cc0::jobs::run(const char *name)
+void cc0::jobs::run(cc0::jobs::job &root)
 {
-	cc0::jobs::fork j;
-	j.add_child(name);
-	while (j.is_enabled()) {
-		j.root_tick();
+	uint64_t duration_ns = root.get_min_tick_per_sec() > 0 ? root.get_min_tick_per_sec() : 1;
+
+	while (root.is_enabled()) {
+		
+		const uint64_t start_ns = std::chrono::high_resolution_clock::now().time_since_epoch().count();
+
+		root.tick(duration_ns);
+
+		duration_ns = std::chrono::high_resolution_clock::now().time_since_epoch().count() - start_ns;
+
+		if (duration_ns < root.get_min_duration_ns()) {
+			std::this_thread::sleep_for(std::chrono::nanoseconds(root.get_min_duration_ns() - duration_ns));
+			duration_ns = root.get_min_duration_ns();
+		}
 	}
 }

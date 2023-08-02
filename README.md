@@ -17,7 +17,7 @@ At its heart, this type of functionality is what you see in operating systems wi
 `jobs` is intended to be minimal. It does not depend on STL, nor any other external library. It contains only the minimum amount of functionality to provide useful data structures. It exposes only the functionality and data structures needed to attain its goal, and keeps the implementation details private.
 
 ## Usage
-`jobs` has one main class which the user will be interfacing most with, `cc0::jobs::job`. Additionally, the sub-class `cc0::jobs::fork` provides some further refinements to the main class which makes it suitable as a root node, or compound node, in the job tree. Some ease-of-use functionality is provided to get going quickly, such as `cc0::jobs::run` which implements enough boiler plate code to just be able to make a single call to get the job tree executing. 
+`jobs` has one main class which the user will be interfacing most with, `cc0::jobs::job`. Some ease-of-use functionality is provided to get going quickly, such as `cc0::jobs::run` which implements enough boiler plate code to just be able to make a single call to get the job tree executing. 
 
 ## Building
 No special adjustments need to be made to build `jobs` except enabling C++11 compatibility or above. Simply include the relevant headers in your code and make sure the headers and source files are available in your compiler search paths. Using `g++` as an example, building is no harder than:
@@ -389,37 +389,9 @@ protected:
 };
 ```
 
+Using game engines as an example, durations should for instance be used to scale movement over the duration. If the frame rate is high, the movement at each tick should be shorter, and vice versa.
+
 Local time scaling (i.e. time dilation) is not properly supported at the moment. The idea is for each job to keep its own time and the programmer would be able to slow down or speed up its execution (including the execution of its children) independent from the rest of the parent tree and letting the time drift apart from the parent tree.
-
-### Composite jobs/root jobs
-`jobs` provides one data structure inherited from `cc0::jobs::job` called `cc0::jobs::fork` which acts as a composite job, or root job. It is mainly intended for use as a root node, but can be used as a node at any part in the tree as well. Its main feature is that it will sleep execution to fit timings provided by the user, and will terminate itself if it has no enabled children. These features reside inside a new, `root_tick`, function.
-```
-#include "jobs/jobs.h"
-
-CC0_JOBS_NEW(custom_job)
-{
-protected:
-	void on_tick(uint64_t) {
-		kill();
-	}
-};
-
-int main()
-{
-	cc0::jobs::fork root;
-	root.add_child<custom_job>();
-	while (root.is_enabled()) {
-		root.root_tick();
-	}
-	return 0;
-}
-```
-
-It should be noted, that this set up is very similar to how the `run` function works with the exception that the `run` function attaches the child specified by the user.
-
-Setting maximum ticks per second and minimum ticks per second to 0 means that the job will execute in real-time, i.e. the actual duration of the tick will be passed to functions taking durations. This is the default setting unless the user specifically provides their own minimum and maximum ticks per second.
-
-Note that it is not recommended to specify timings for a `cc0::jobs::fork` job that is not the root of the tree. While technically possible, such a set up will drift other parts of the tree out of sync with their intended tick rate.
 
 ### Job state terminology
 A job can be killed, i.e., marked for deletion (killed jobs are not immediately deleted as this could prove unsafe for other jobs that are still referencing the killed job). This will cease the job's main functionality such as ticking and event handling. A job that has been killed will be registered as such via the `is_killed` flag. Conversely, a job will register as alive via `is_alive` if it has not been killed. A job is killed via the `kill` function.
@@ -502,6 +474,97 @@ protected:
 ```
 In the above example, instantiating a `sender` as a child under a `listener` will trigger `listener`'s `event_callback` function only once when the `sender` object ticks as the callback also unsubscribes from the event via `ignore`.
 
+### Tick frequency/duration limits
+By default, the job tree will execute whenever it is called to trigger. However, there are many situations where the user may want to rate limit the ticking frequency. There are two ways to limit the rate at which jobs tick; Using rate limiting, or interval limiting. Both mean the same thing, but are reciprocal, i.e. one version works with Hertz and the other works with the duration of a cycle.
+
+Rate limiting:
+```
+cc0::jobs::job j;
+
+// Limit tick rate to an interval between 20Hz and 80Hz.
+j.limit_tick_rate(20, 80);
+```
+
+Unlimiting the rate:
+```
+j.unlimit_tick_rate();
+```
+
+Interval limiting:
+```
+cc0::jobs::job j;
+
+// Limit tick duration to an interval between 16 nanoseconds and 32 nanoseconds.
+j.limit_tick_duration(16, 32);
+```
+
+Unlimiting the interval:
+```
+j.unlimit_tick_duration();
+```
+
+Limited tick rates and intervals function by letting a job sleep or clip time before feeding it into the job. Whenever a shorter duration than the minimally allowed duration is passed to a job's `tick` function, the job waits until enough time has passed to perform the tick. Whenever a duration longer than the maximally allowed duration is passed to a job's `tick` function the duration is clipped to the maximally allowed duration. As an example, waiting ensures that games run no faster than a certain given frame rate, while time clipping will appear to slow the game down in order to avoid that extremely low frame rates move the game too far along between each frame so as to become unplayable. These qualities may be essential to, for instance, real-time physics simulations which can break down at very small or very large durations.
+
+Duration data for the root node is provided by the user, who can then decide whether to fix the elapsed time between ticks to some given value, or base the value on real time elapsed between ticks. 
+
+Note that waiting due to durations lower than the accepted minimum is implemented as a soft sleep, meaning that the thread executing the job tree will not stop processing job nodes, but will skip waiting ones. Jobs waiting due to durations will not be marked as sleeping. However, the convenience function `run` is an exception in this regard as it does a hard sleep, i.e. sleeps the executing thread in order to allow the thread to context switch and lower power consumption. The root node will still not be marked as sleeping in this case.
+
+### Running the job tree until complete
+Complex jobs may not terminate after a deterministic amount of time. In order to run such jobs to completion the user must run the root of the job tree until some condition has been fulfilled. The example below shows how such a root can be set up, and what convenience functions are provided.
+
+First, the user must determine what the conditions are for the job to finish. In this example, when all child jobs have been terminated, the parent node will also be terminated, making the completion of the job. Such a parent/root node looks like the following:
+```
+CC0_JOBS_NEW(fork)
+{
+protected:
+	void on_tick(uint64_t) {
+		if (has_enabled_children()) {
+			kill();
+		}
+	}
+};
+```
+
+Second, some sub-jobs must be set up. This is only a trivial jobs for the purposes of illustration.
+```
+CC0_JOBS_NEW(counter)
+{
+private:
+	uint64_t m_countdown;
+
+protected:
+	void on_tick(uint64_t) {
+		if (m_countdown == 0) {
+			kill();
+		} else {
+			--m_countdown;
+		}
+	}
+
+public:
+	counter( void ) : m_countdown(0) {}
+
+	void set_countdown(uint64_t countdown) {
+		m_countdown = countdown;
+	}
+};
+```
+
+Next, the jobs need to be attached to the root job as children:
+```
+fork root;
+for (uint64_t i = 0; i < 100; ++i) {
+	root.add_child<counter>()->set_countdown(i+1);
+}
+```
+
+Finally, the tree must execute:
+```
+cc0::jobs::run(&fork);
+```
+
+`run` executes the tree until the provided root node (input parameter) is marked as disabled. In the example above, each child job will decrement a counter which, when hitting 0, will terminate the child job thereby marking it as disabled. The root node checks if there are any enabled children at each tick. When it does not detect a single enabled child, it terminates itself thereby marking it as disabled and returning from `run`.
+
 ## Limitations
 `jobs` is not trivially threadable in an effective manner since any job may read or write to any other job.
 
@@ -513,3 +576,4 @@ Due to how different C++ compilers work, it may be necessary to use a job class 
 * Registering multiple callbacks per event.
 * Removing only one subscribed event callback rather than all for a single event.
 * Functional time scaling.
+* Instead of capping durations if they exceed the maximum allowed duration, maybe we should temporarily scale the job's time scale down to match the target time cap, although this would also affect children.

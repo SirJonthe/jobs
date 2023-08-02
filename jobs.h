@@ -560,6 +560,9 @@ namespace cc0
 			uint64_t                         m_existed_tick_count;
 			uint64_t                         m_active_tick_count;
 			uint64_t                         m_time_scale;
+			uint64_t                         m_min_duration_ns;
+			uint64_t                         m_max_duration_ns;
+			uint64_t                         m_duration_ns;
 			internal::search_tree<callback>  m_event_callbacks;
 			shared                          *m_shared;
 			bool                             m_enabled;
@@ -601,6 +604,11 @@ namespace cc0
 			/// @param time_scale The fixed-point scale, shifted by 32 bits.
 			/// @return The scaled time.
 			static uint64_t scale_time(uint64_t time, uint64_t time_scale);
+
+			/// @brief Adjusts the duration to both scale time, fix the interval, and take into account sleep.
+			/// @param duration_ns The duration to adjust.
+			/// @return The adjusted duration.
+			uint64_t adjust_duration(uint64_t duration_ns) const;
 
 		protected:
 			/// @brief Called when ticking the job, before the children are ticked.
@@ -668,7 +676,7 @@ namespace cc0
 			/// @return A pointer to the job that was added of the type of a generic job. Null if the name has not been declared properly using CC0_JOBS_NEW or CC0_JOBS_DERIVE.
 			/// @sa CC0_JOBS_NEW
 			/// @sa CC0_JOBS_DERIVE
-			job *add_child(const char *name);
+			job *add_child(const char *type_name);
 
 			/// @brief Enables the job, allowing it to tick and call the death function.
 			void enable( void );
@@ -832,7 +840,7 @@ namespace cc0
 			/// @sa CC0_JOBS_NEW
 			/// @sa CC0_JOBS_DERIVE
 			template < typename job_t >
-			static bool register_job(const char *name);
+			static bool register_job(const char *type_name);
 
 			/// @brief Traverses the child tree and counts the number of child jobs present under this parent.
 			/// @return The number of child jobs present under this parent.
@@ -841,59 +849,64 @@ namespace cc0
 			/// @brief Traverses the entire sub-tree and counts the number of decendant jobs under this parent.
 			/// @return The number of decendant jobs present under this parent.
 			uint64_t count_decendants( void ) const;
-		};
 
-		/// @brief A job node that monitors its children and kills execution when there are no remaining children.
-		CC0_JOBS_NEW(fork)
-		{
-		private:
-			uint64_t m_min_duration_ns;
-			uint64_t m_max_duration_ns;
-			uint64_t m_tick_start_ns;
-			uint64_t m_duration_ns;
+			/// @brief Forces duration input in tick function to fall within a given range.
+			/// @param min_duration_ns The smallest duration that can be handled. If a smaller duration is passed to the tick function, the job will sleep.
+			/// @param max_duration_ns The largest duration that can be handled. If a larger duration is passed to the tick function, the duration will be clipped to the max duration.
+			/// @sa limit_tick_rate
+			/// @note Does the same thing as limit_tick_rate, but works with durations.
+			void limit_tick_interval(uint64_t min_duration_ns, uint64_t max_duration_ns);
 
-		private:
-			/// @brief Terminates the job if it has no enabled children.
-			void kill_if_disabled_children( void );
+			/// @brief Removes restrictions on duration input to tick function.
+			/// @note Does the same thing as unlimit_tick_rate.
+			/// @sa unlimit_tick_rate
+			void unlimit_tick_interval( void );
 
-			/// @brief Adjusts the time elapsed (duration) since last tick by either sleeping the job so it does not exceed the maximum number of ticks per second, or clip the duration to correspond to the minimum number of ticks per second.
-			/// @param tick_timing_ns The amount of time (in ns) it took to execute a tick including ticks of children.
-			void adjust_duration(uint64_t tick_timing_ns);
-		
-		protected:
-			/// @brief Terminates the job if it has no enabled children.
-			/// @param duration_ns Unused.
-			void on_tick(uint64_t duration_ns);
+			/// @brief Forces duration input in tick function to fall within a given range.
+			/// @param min_ticks_per_sec The smallest amount of ticks per second that can be handled. If a smaller amount of ticks are suspected the duration is capped to match the minimum expected ticks per second.
+			/// @param max_ticks_per_sec The largest amount of ticks per second that can be handled. If a larger amount of ticks are suspected the job will sleep.
+			/// @sa limit_tick_duration_interval
+			/// @note Does the same thing as lock_duration_interval, but works with frequency.
+			void limit_tick_rate(uint64_t min_ticks_per_sec, uint64_t max_ticks_per_sec);
 
-			/// @brief Adjusts the time elapsed.
-			/// @param duration_ns Unused.
-			void on_tock(uint64_t duration_ns);
+			/// @brief Removes restrictions on duration input to tick function.
+			/// @note Does the same thing as unlock_duration_interval.
+			/// @sa unlimit_tick_duration_interval
+			void unlimit_tick_rate( void );
 
-		public:
-			/// @brief  Default constructor. No tick limits.
-			fork( void );
-			
-			/// @brief Constructs the tree with tick limits.
-			/// @param min_ticks_per_sec The minimum number of ticks that will be performed per second. If the jobes do not hit the target, the durations are clipped to a second divided by the minimum.
-			/// @param max_ticks_per_sec The maximum number of ticks that will be performed per second. If the jobes exceed the target the job and its children sleeps.
-			fork(uint64_t min_ticks_per_sec, uint64_t max_ticks_per_sec);
+			/// @brief Returns the minimum allowed duration (ns) between ticks.
+			/// @return The minimum allowed duration (ns) between ticks.
+			uint64_t get_min_duration_ns( void ) const;
 
-			/// @brief A version of tick that terminates the job if it has no enabled children, and adjusts durations fed to children based on execution time and specified limits of the duration.
-			void root_tick( void );
+			/// @brief Returns the maximum allowed duration (ns) between ticks.
+			/// @return The maximum allowed duration (ns) between ticks.
+			uint64_t get_max_duration_ns( void ) const;
+
+			/// @brief Returns the minimum allowed tick frequency per second.
+			/// @return The minimum allowed tick frequency per second.
+			uint64_t get_min_tick_per_sec( void ) const;
+
+			/// @brief Returns the maximum allowed tick frequency per second.
+			/// @return The maximum allowed tick frequency per second.
+			uint64_t get_max_tick_per_sec( void ) const;
+
+			/// @brief Returns true if the job is tick (rate) limited.
+			/// @return True if the job is tick (rate) limited.
+			bool is_tick_limited( void ) const;
+
+			/// @brief Creates a new job of the given type.
+			/// @param type_name The name of the type.
+			/// @return The created job. Null if the type name is not registered, found, of if the type could not be converted into the base job class.
+			static cc0::jobs::job *create_orphan(const char *type_name);
+
+			/// @brief Determines if the job has any enabled children.
+			/// @return True if there is at least one enabled child. False if there are no enabled children, or no children at all.
+			bool has_enabled_children( void ) const;
 		};
 
 		/// @brief Spawns a root job node and attaches the specified initial job as a child to that node, then continues execution until the root node no longer has any children.
-		/// @tparam init_job_t The initial job to attach as a child to the root node.
-		/// @note The init job should set up everything for proper further execution of the jobs.
-		template < typename init_job_t >
-		void run( void );
-
-		/// @brief Spawns a root job node and attaches the specified initial job as a child to that node, then continues execution until the root node no longer has any children.
-		/// @param name The name of the initial job to attach as a child to the root node.
-		/// @note The init job should set up everything for proper further execution of the jobs.
-		/// @sa CC0_JOBS_NEW
-		/// @sa CC0_JOBS_DERIVE
-		void run(const char *name);
+		/// @param root The node to the treated as the root node.
+		void run(cc0::jobs::job &root);
 	}
 }
 
@@ -1354,7 +1367,9 @@ job_t *cc0::jobs::job::add_child( void )
 	if (!is_killed()) {
 		p = new job_t;
 		add_sibling(m_child, p);
-		((job*)p)->on_birth();
+		((job*)p)->m_min_duration_ns = m_min_duration_ns;
+		((job*)p)->m_max_duration_ns = m_max_duration_ns;
+		p->on_birth();
 	}
 	return p;
 }
@@ -1379,27 +1394,13 @@ cc0::jobs::job::query::results cc0::jobs::job::get_children( void )
 }
 
 template < typename job_t >
-bool cc0::jobs::job::register_job(const char *name)
+bool cc0::jobs::job::register_job(const char *type_name)
 {
-	if (m_products.get(name) != nullptr) {
+	if (m_products.get(type_name) != nullptr) {
 		return false;
 	}
-	m_products.add(name, job_t::instance);
+	m_products.add(type_name, job_t::instance);
 	return true;
-}
-
-//
-// global
-//
-
-template < typename init_job_t >
-void cc0::jobs::run( void )
-{
-	cc0::jobs::fork j;
-	j.add_child<init_job_t>();
-	while (j.is_enabled()) {
-		j.tick(0);
-	}
 }
 
 #endif
