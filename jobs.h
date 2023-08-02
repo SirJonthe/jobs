@@ -734,10 +734,8 @@ namespace cc0
 			void notify(const char *event, job &target);
 
 			/// @brief Returns a safe reference that will automatically turn null if the job is deleted.
-			/// @tparam job_t The type of the returned reference.
 			/// @return The reference.
-			template < typename job_t = cc0::jobs::job >
-			ref<job_t> get_ref( void );
+			ref<> get_ref( void );
 
 			/// @brief Gets the accumulated time the job has existed for.
 			/// @return The accumulated time (in nanoseconds) the job has existed for.
@@ -1353,13 +1351,6 @@ job_t *cc0::jobs::job::add_child( void )
 	}
 	return p;
 }
-
-template < typename job_t >
-cc0::jobs::job::ref<job_t> cc0::jobs::job::get_ref( void )
-{
-	return ref<job_t>(this);
-}
-
 
 template < typename query_t >
 cc0::jobs::job::query::results cc0::jobs::job::filter_children(const query_t &q)

@@ -589,6 +589,11 @@ void cc0::jobs::job::notify(const char *event, cc0::jobs::job &target)
 	target.get_notified(event, *this);
 }
 
+cc0::jobs::job::ref<> cc0::jobs::job::get_ref( void )
+{
+	return ref<job>(this);
+}
+
 uint64_t cc0::jobs::job::get_existed_for( void ) const
 {
 	return m_existed_for_ns;
