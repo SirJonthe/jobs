@@ -315,6 +315,9 @@ namespace cc0
 				shared *m_shared;
 			
 			public:
+				/// @brief Default constructor.
+				ref( void );
+
 				/// @brief Initializes the reference.
 				/// @tparam job2_t Type of the job pointer to reference.
 				/// @param p The job to reference.
@@ -1192,6 +1195,10 @@ void cc0::jobs::job::callback::set(job_t *self, void (job_t::*fn)(cc0::jobs::job
 //
 // ref
 //
+
+template < typename job_t >
+cc0::jobs::job::ref<job_t>::ref( void ) : m_job(nullptr), m_shared(nullptr)
+{}
 
 template < typename job_t >
 template < typename job2_t >
