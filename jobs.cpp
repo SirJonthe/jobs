@@ -13,7 +13,7 @@
 
 #define NS_PER_SEC 1000000000ULL
 
-uint64_t cc0::jobs::internal::new_uuid( void )
+uint64_t cc0::jobs_internal::new_uuid( void )
 {
 	static uint64_t uuid = 0;
 	return uuid++;
@@ -23,41 +23,41 @@ uint64_t cc0::jobs::internal::new_uuid( void )
 // rtti
 //
 
-void *cc0::jobs::internal::rtti::self(uint64_t type_id)
+void *cc0::jobs_internal::rtti::self(uint64_t type_id)
 {
 	return this->type_id() == type_id ? this : nullptr;
 }
 
-const void *cc0::jobs::internal::rtti::self(uint64_t type_id) const
+const void *cc0::jobs_internal::rtti::self(uint64_t type_id) const
 {
 	return this->type_id() == type_id ? this : nullptr;
 }
 
-cc0::jobs::internal::rtti::~rtti( void )
+cc0::jobs_internal::rtti::~rtti( void )
 {}
 
-uint64_t cc0::jobs::internal::rtti::type_id( void )
+uint64_t cc0::jobs_internal::rtti::type_id( void )
 {
-	static const uint64_t id = cc0::jobs::internal::new_uuid();
+	static const uint64_t id = cc0::jobs_internal::new_uuid();
 	return id;
 }
 
-cc0::jobs::internal::rtti *cc0::jobs::internal::rtti::instance( void )
+cc0::jobs_internal::rtti *cc0::jobs_internal::rtti::instance( void )
 {
 	return new rtti;
 }
 
-uint64_t cc0::jobs::internal::rtti::object_id( void ) const
+uint64_t cc0::jobs_internal::rtti::object_id( void ) const
 {
 	return type_id();
 }
 
-const char *cc0::jobs::internal::rtti::object_name( void ) const
+const char *cc0::jobs_internal::rtti::object_name( void ) const
 {
 	return type_name();
 }
 
-const char *cc0::jobs::internal::rtti::type_name( void )
+const char *cc0::jobs_internal::rtti::type_name( void )
 {
 	return "rtti";
 }
@@ -66,15 +66,15 @@ const char *cc0::jobs::internal::rtti::type_name( void )
 // callback
 //
 
-cc0::jobs::job::callback::callback( void ) : m_callback(nullptr)
+cc0::job::callback::callback( void ) : m_callback(nullptr)
 {}
 
-cc0::jobs::job::callback::~callback( void )
+cc0::job::callback::~callback( void )
 {
 	delete m_callback;
 }
 
-void cc0::jobs::job::callback::operator()(cc0::jobs::job &sender)
+void cc0::job::callback::operator()(cc0::job &sender)
 {
 	if (m_callback != nullptr) {
 		(*m_callback)(sender);
@@ -85,38 +85,38 @@ void cc0::jobs::job::callback::operator()(cc0::jobs::job &sender)
 // result
 //
 
-cc0::jobs::job::query::result::result(cc0::jobs::job &j) : m_job(j.get_ref()), m_next(nullptr)
+cc0::job::query::result::result(cc0::job &j) : m_job(j.get_ref()), m_next(nullptr)
 {}
 
-cc0::jobs::job::query::result::~result( void )
+cc0::job::query::result::~result( void )
 {
 	delete m_next;
 	m_next = nullptr;
 }
 
-cc0::jobs::job::ref<> &cc0::jobs::job::query::result::get_job( void )
+cc0::job::ref<> &cc0::job::query::result::get_job( void )
 {
 	return m_job;
 }
 
-const cc0::jobs::job::ref<> &cc0::jobs::job::query::result::get_job( void ) const
+const cc0::job::ref<> &cc0::job::query::result::get_job( void ) const
 {
 	return m_job;
 }
 
-cc0::jobs::job::query::result *cc0::jobs::job::query::result::get_next( void )
+cc0::job::query::result *cc0::job::query::result::get_next( void )
 {
 	return m_next;
 }
 
-const cc0::jobs::job::query::result *cc0::jobs::job::query::result::get_next( void ) const
+const cc0::job::query::result *cc0::job::query::result::get_next( void ) const
 {
 	return m_next;
 }
 
-cc0::jobs::job::query::result *cc0::jobs::job::query::result::remove( void )
+cc0::job::query::result *cc0::job::query::result::remove( void )
 {
-	cc0::jobs::job::query::result *next = m_next;
+	cc0::job::query::result *next = m_next;
 	if (m_prev != nullptr) {
 		*m_prev = m_next;
 	}
@@ -129,7 +129,7 @@ cc0::jobs::job::query::result *cc0::jobs::job::query::result::remove( void )
 // results
 //
 
-void cc0::jobs::job::query::results::insert_and_increment(cc0::jobs::internal::search_tree<join_node,const cc0::jobs::job*> &t, cc0::jobs::job::query::results &r)
+void cc0::job::query::results::insert_and_increment(cc0::jobs_internal::search_tree<join_node,const cc0::job*> &t, cc0::job::query::results &r)
 {
 	result *i = r.get_results();
 	while (i != nullptr) {
@@ -143,7 +143,7 @@ void cc0::jobs::job::query::results::insert_and_increment(cc0::jobs::internal::s
 	}
 }
 
-void cc0::jobs::job::query::results::remove_and_decrement(cc0::jobs::internal::search_tree<join_node,const cc0::jobs::job*> &t, cc0::jobs::job::query::results &r)
+void cc0::job::query::results::remove_and_decrement(cc0::jobs_internal::search_tree<join_node,const cc0::job*> &t, cc0::job::query::results &r)
 {
 	result *i = r.get_results();
 	while (i != nullptr) {
@@ -155,15 +155,15 @@ void cc0::jobs::job::query::results::remove_and_decrement(cc0::jobs::internal::s
 	}
 }
 
-cc0::jobs::job::query::results::results( void ) : m_first(nullptr), m_end(&m_first)
+cc0::job::query::results::results( void ) : m_first(nullptr), m_end(&m_first)
 {}
 
-cc0::jobs::job::query::results::~results( void )
+cc0::job::query::results::~results( void )
 {
 	delete m_first;
 }
 
-cc0::jobs::job::query::results::results(cc0::jobs::job::query::results &&r) : results()
+cc0::job::query::results::results(cc0::job::query::results &&r) : results()
 {
 	m_first = r.m_first;
 	m_end = r.m_end;
@@ -172,7 +172,7 @@ cc0::jobs::job::query::results::results(cc0::jobs::job::query::results &&r) : re
 	r.m_end = &r.m_first;
 }
 
-cc0::jobs::job::query::results &cc0::jobs::job::query::results::operator=(cc0::jobs::job::query::results &&r)
+cc0::job::query::results &cc0::job::query::results::operator=(cc0::job::query::results &&r)
 {
 	if (this != &r) {
 		delete m_first;
@@ -187,17 +187,17 @@ cc0::jobs::job::query::results &cc0::jobs::job::query::results::operator=(cc0::j
 	return *this;
 }
 
-cc0::jobs::job::query::result *cc0::jobs::job::query::results::get_results( void )
+cc0::job::query::result *cc0::job::query::results::get_results( void )
 {
 	return m_first;
 }
 
-const cc0::jobs::job::query::result *cc0::jobs::job::query::results::get_results( void ) const
+const cc0::job::query::result *cc0::job::query::results::get_results( void ) const
 {
 	return m_first;
 }
 
-uint64_t cc0::jobs::job::query::results::count_results( void ) const
+uint64_t cc0::job::query::results::count_results( void ) const
 {
 	const result *r = m_first;
 	uint64_t c = 0;
@@ -208,13 +208,13 @@ uint64_t cc0::jobs::job::query::results::count_results( void ) const
 	return c;
 }
 
-void cc0::jobs::job::query::results::add_result(cc0::jobs::job &j)
+void cc0::job::query::results::add_result(cc0::job &j)
 {
 	*m_end = new query::result(j);
 	m_end = &(*m_end)->m_next;
 }
 
-cc0::jobs::job::query::results cc0::jobs::job::query::results::filter_results(const cc0::jobs::job::query &q)
+cc0::job::query::results cc0::job::query::results::filter_results(const cc0::job::query &q)
 {
 	results r;
 	result *c = get_results();
@@ -227,9 +227,9 @@ cc0::jobs::job::query::results cc0::jobs::job::query::results::filter_results(co
 	return r;
 }
 
-cc0::jobs::job::query::results cc0::jobs::job::query::results::join_and(cc0::jobs::job::query::results &a, cc0::jobs::job::query::results &b)
+cc0::job::query::results cc0::job::query::results::join_and(cc0::job::query::results &a, cc0::job::query::results &b)
 {
-	internal::search_tree<join_node,const job*> t;
+	cc0::jobs_internal::search_tree<join_node,const job*> t;
 	insert_and_increment(t, a);
 	insert_and_increment(t, b);
 	results res;
@@ -247,9 +247,9 @@ cc0::jobs::job::query::results cc0::jobs::job::query::results::join_and(cc0::job
 	return res;
 }
 
-cc0::jobs::job::query::results cc0::jobs::job::query::results::join_or(cc0::jobs::job::query::results &a, cc0::jobs::job::query::results &b)
+cc0::job::query::results cc0::job::query::results::join_or(cc0::job::query::results &a, cc0::job::query::results &b)
 {
-	internal::search_tree<join_node,const job*> t;
+	cc0::jobs_internal::search_tree<join_node,const job*> t;
 	insert_and_increment(t, a);
 	insert_and_increment(t, b);
 	results res;
@@ -265,9 +265,9 @@ cc0::jobs::job::query::results cc0::jobs::job::query::results::join_or(cc0::jobs
 	return res;
 }
 
-cc0::jobs::job::query::results cc0::jobs::job::query::results::join_sub(cc0::jobs::job::query::results &l, cc0::jobs::job::query::results &r)
+cc0::job::query::results cc0::job::query::results::join_sub(cc0::job::query::results &l, cc0::job::query::results &r)
 {
-	internal::search_tree<join_node,const job*> t;
+	cc0::jobs_internal::search_tree<join_node,const job*> t;
 	insert_and_increment(t, l);
 	remove_and_decrement(t, r);
 	results res;
@@ -285,9 +285,9 @@ cc0::jobs::job::query::results cc0::jobs::job::query::results::join_sub(cc0::job
 	return res;
 }
 
-cc0::jobs::job::query::results cc0::jobs::job::query::results::join_xor(cc0::jobs::job::query::results &a, cc0::jobs::job::query::results &b)
+cc0::job::query::results cc0::job::query::results::join_xor(cc0::job::query::results &a, cc0::job::query::results &b)
 {
-	internal::search_tree<join_node,const job*> t;
+	cc0::jobs_internal::search_tree<join_node,const job*> t;
 	insert_and_increment(t, a);
 	insert_and_increment(t, b);
 	results res;
@@ -309,10 +309,10 @@ cc0::jobs::job::query::results cc0::jobs::job::query::results::join_xor(cc0::job
 // query
 //
 
-cc0::jobs::job::query::~query( void )
+cc0::job::query::~query( void )
 {}
 
-bool cc0::jobs::job::query::operator()(const cc0::jobs::job &j) const
+bool cc0::job::query::operator()(const cc0::job &j) const
 {
 	return true;
 }
@@ -321,22 +321,22 @@ bool cc0::jobs::job::query::operator()(const cc0::jobs::job &j) const
 // job
 //
 
-cc0::jobs::internal::search_tree<cc0::jobs::instance_fn> cc0::jobs::job::m_products = cc0::jobs::internal::search_tree<cc0::jobs::instance_fn>();
+cc0::jobs_internal::search_tree<cc0::jobs_internal::instance_fn> cc0::job::m_products = cc0::jobs_internal::search_tree<cc0::jobs_internal::instance_fn>();
 
-void cc0::jobs::job::set_deleted( void )
+void cc0::job::set_deleted( void )
 {
 	m_shared->deleted = true;
 }
 
-void cc0::jobs::job::add_sibling(cc0::jobs::job *&loc, cc0::jobs::job *p)
+void cc0::job::add_sibling(cc0::job *&loc, cc0::job *p)
 {
-	cc0::jobs::job *old_loc = loc;
+	cc0::job *old_loc = loc;
 	loc = p;
 	loc->m_parent = this;
 	loc->m_sibling = old_loc;
 }
 
-void cc0::jobs::job::delete_siblings(cc0::jobs::job *&siblings)
+void cc0::job::delete_siblings(cc0::job *&siblings)
 {
 	if (siblings != nullptr) {
 		delete_siblings(siblings->m_sibling);
@@ -345,7 +345,7 @@ void cc0::jobs::job::delete_siblings(cc0::jobs::job *&siblings)
 	}
 }
 
-void cc0::jobs::job::delete_children(cc0::jobs::job *&children)
+void cc0::job::delete_children(cc0::job *&children)
 {
 	if (children != nullptr) {
 		delete_siblings(children->m_sibling);
@@ -354,7 +354,7 @@ void cc0::jobs::job::delete_children(cc0::jobs::job *&children)
 	}
 }
 
-void cc0::jobs::job::delete_killed_children(cc0::jobs::job *&child)
+void cc0::job::delete_killed_children(cc0::job *&child)
 {
 	if (child != nullptr) {
 		delete_killed_children(child->m_sibling);
@@ -367,14 +367,14 @@ void cc0::jobs::job::delete_killed_children(cc0::jobs::job *&child)
 	}
 }
 
-void cc0::jobs::job::tick_children(uint64_t duration_ns)
+void cc0::job::tick_children(uint64_t duration_ns)
 {
-	for (cc0::jobs::job *c = m_child; c != nullptr && is_active(); c = c->m_sibling) {
+	for (cc0::job *c = m_child; c != nullptr && is_active(); c = c->m_sibling) {
 		c->tick(duration_ns);
 	}
 }
 
-void cc0::jobs::job::get_notified(const char *event, cc0::jobs::job &sender)
+void cc0::job::get_notified(const char *event, cc0::job &sender)
 {
 	if (is_active()) {
 		callback *c = m_event_callbacks.get(event);
@@ -384,32 +384,32 @@ void cc0::jobs::job::get_notified(const char *event, cc0::jobs::job &sender)
 	}
 }
 
-uint64_t cc0::jobs::job::scale_time(uint64_t time, uint64_t time_scale)
+uint64_t cc0::job::scale_time(uint64_t time, uint64_t time_scale)
 {
 	return (time * time_scale) >> 16;
 }
 
-uint64_t cc0::jobs::job::adjust_duration(uint64_t duration_ns) const
+uint64_t cc0::job::adjust_duration(uint64_t duration_ns) const
 {
 	duration_ns = scale_time(duration_ns + m_duration_ns, m_time_scale);
 	return duration_ns < m_max_duration_ns ? duration_ns : m_max_duration_ns;
 }
 
-void cc0::jobs::job::on_tick(uint64_t duration)
+void cc0::job::on_tick(uint64_t duration)
 {}
 
-void cc0::jobs::job::on_tock(uint64_t duration)
+void cc0::job::on_tock(uint64_t duration)
 {}
 
-void cc0::jobs::job::on_birth( void )
+void cc0::job::on_birth( void )
 {}
 
-void cc0::jobs::job::on_death( void )
+void cc0::job::on_death( void )
 {}
 
-cc0::jobs::job::job( void ) :
+cc0::job::job( void ) :
 	m_parent(nullptr), m_sibling(nullptr), m_child(nullptr),
-	m_job_id(cc0::jobs::internal::new_uuid()),
+	m_job_id(cc0::jobs_internal::new_uuid()),
 	m_sleep_ns(0),
 	m_existed_for_ns(0), m_active_for_ns(0), m_existed_tick_count(0), m_active_tick_count(0),
 	m_min_duration_ns(0), m_max_duration_ns(0), m_duration_ns(m_min_duration_ns),
@@ -419,7 +419,7 @@ cc0::jobs::job::job( void ) :
 	m_enabled(true), m_kill(false), m_tick_lock(false)
 {}
 
-cc0::jobs::job::~job( void )
+cc0::job::~job( void )
 {
 	delete m_child;
 	m_child = nullptr;
@@ -433,7 +433,7 @@ cc0::jobs::job::~job( void )
 	}
 }
 
-void cc0::jobs::job::tick(uint64_t duration_ns)
+void cc0::job::tick(uint64_t duration_ns)
 {
 	if (!m_tick_lock) {
 		m_tick_lock = true;
@@ -479,7 +479,7 @@ void cc0::jobs::job::tick(uint64_t duration_ns)
 	}
 }
 
-void cc0::jobs::job::kill( void )
+void cc0::job::kill( void )
 {
 	if (is_alive()) {
 		kill_children();
@@ -494,31 +494,31 @@ void cc0::jobs::job::kill( void )
 	}
 }
 
-void cc0::jobs::job::kill_children( void )
+void cc0::job::kill_children( void )
 {
-	for (cc0::jobs::job *c = m_child; c != nullptr; c = c->m_sibling) {
+	for (cc0::job *c = m_child; c != nullptr; c = c->m_sibling) {
 		c->kill();
 	}
 }
 
-void cc0::jobs::job::sleep_for(uint64_t duration_ns)
+void cc0::job::sleep_for(uint64_t duration_ns)
 {
 	m_sleep_ns = m_sleep_ns > duration_ns ? m_sleep_ns : duration_ns;
 }
 
-void cc0::jobs::job::wake( void )
+void cc0::job::wake( void )
 {
 	m_sleep_ns = 0;
 }
 
-void cc0::jobs::job::ignore(const char *event)
+void cc0::job::ignore(const char *event)
 {
 	m_event_callbacks.remove(event);
 }
 
-cc0::jobs::job *cc0::jobs::job::add_child(const char *type_name)
+cc0::job *cc0::job::add_child(const char *type_name)
 {
-	cc0::jobs::job *p = nullptr;
+	cc0::job *p = nullptr;
 	if (!is_killed()) {
 		p = create_orphan(type_name);
 		if (p != nullptr) {
@@ -531,76 +531,76 @@ cc0::jobs::job *cc0::jobs::job::add_child(const char *type_name)
 	return p;
 }
 
-void cc0::jobs::job::enable( void )
+void cc0::job::enable( void )
 {
 	m_enabled = true;
 }
 
-void cc0::jobs::job::disable( void )
+void cc0::job::disable( void )
 {
 	m_enabled = false;
 }
 
-bool cc0::jobs::job::is_killed( void ) const
+bool cc0::job::is_killed( void ) const
 {
 	return m_kill;
 }
 
-bool cc0::jobs::job::is_alive( void ) const
+bool cc0::job::is_alive( void ) const
 {
 	return !is_killed();
 }
 
-bool cc0::jobs::job::is_enabled( void ) const
+bool cc0::job::is_enabled( void ) const
 {
 	return !is_killed() && m_enabled;
 }
 
-bool cc0::jobs::job::is_disabled( void ) const
+bool cc0::job::is_disabled( void ) const
 {
 	return !is_enabled();
 }
 
-bool cc0::jobs::job::is_sleeping( void ) const
+bool cc0::job::is_sleeping( void ) const
 {
 	return m_sleep_ns > 0;
 }
 
-bool cc0::jobs::job::is_awake( void ) const
+bool cc0::job::is_awake( void ) const
 {
 	return !is_sleeping();
 }
 
-bool cc0::jobs::job::is_active( void ) const
+bool cc0::job::is_active( void ) const
 {
 	return is_enabled() && !is_sleeping();
 }
 
-bool cc0::jobs::job::is_inactive( void ) const
+bool cc0::job::is_inactive( void ) const
 {
 	return !is_active();
 }
 
-uint64_t cc0::jobs::job::get_job_id( void ) const
+uint64_t cc0::job::get_job_id( void ) const
 {
 	return m_job_id;
 }
 
-void cc0::jobs::job::notify_parent(const char *event)
+void cc0::job::notify_parent(const char *event)
 {
 	if (m_parent != nullptr && is_active()) {
 		notify(event, *m_parent);
 	}
 }
 
-void cc0::jobs::job::notify_children(const char *event)
+void cc0::job::notify_children(const char *event)
 {
-	for (cc0::jobs::job *c = m_child; c != nullptr && is_active(); c = c->m_sibling) {
+	for (cc0::job *c = m_child; c != nullptr && is_active(); c = c->m_sibling) {
 		notify(event, *c);
 	}
 }
 
-void cc0::jobs::job::notify_group(const char *event, cc0::jobs::job::query::results &group)
+void cc0::job::notify_group(const char *event, cc0::job::query::results &group)
 {
 	query::result *r = group.get_results();
 	while (r != nullptr && is_active()) {
@@ -609,100 +609,100 @@ void cc0::jobs::job::notify_group(const char *event, cc0::jobs::job::query::resu
 	}
 }
 
-void cc0::jobs::job::notify(const char *event, cc0::jobs::job &target)
+void cc0::job::notify(const char *event, cc0::job &target)
 {
 	target.get_notified(event, *this);
 }
 
-cc0::jobs::job::ref<> cc0::jobs::job::get_ref( void )
+cc0::job::ref<> cc0::job::get_ref( void )
 {
 	return ref<job>(this);
 }
 
-uint64_t cc0::jobs::job::get_existed_for( void ) const
+uint64_t cc0::job::get_existed_for( void ) const
 {
 	return m_existed_for_ns;
 }
 
-uint64_t cc0::jobs::job::get_active_for( void ) const
+uint64_t cc0::job::get_active_for( void ) const
 {
 	return m_active_for_ns;
 }
 
-uint64_t cc0::jobs::job::get_existed_tick_count( void ) const
+uint64_t cc0::job::get_existed_tick_count( void ) const
 {
 	return m_existed_tick_count;
 }
 
-uint64_t cc0::jobs::job::get_active_tick_count( void ) const
+uint64_t cc0::job::get_active_tick_count( void ) const
 {
 	return m_active_tick_count;
 }
 
-cc0::jobs::job *cc0::jobs::job::get_parent( void )
+cc0::job *cc0::job::get_parent( void )
 {
 	return m_parent;
 }
 
-const cc0::jobs::job *cc0::jobs::job::get_parent( void ) const
+const cc0::job *cc0::job::get_parent( void ) const
 {
 	return m_parent;
 }
 
-cc0::jobs::job *cc0::jobs::job::get_child( void )
+cc0::job *cc0::job::get_child( void )
 {
 	return m_child;
 }
 
-const cc0::jobs::job *cc0::jobs::job::get_child( void ) const
+const cc0::job *cc0::job::get_child( void ) const
 {
 	return m_child;
 }
 
-cc0::jobs::job *cc0::jobs::job::get_sibling( void )
+cc0::job *cc0::job::get_sibling( void )
 {
 	return m_sibling;
 }
 
-const cc0::jobs::job *cc0::jobs::job::get_sibling( void ) const
+const cc0::job *cc0::job::get_sibling( void ) const
 {
 	return m_sibling;
 }
 
-cc0::jobs::job *cc0::jobs::job::get_root( void )
+cc0::job *cc0::job::get_root( void )
 {
-	cc0::jobs::job *r = this;
+	cc0::job *r = this;
 	while (r->m_parent != nullptr) {
 		r = r->m_parent;
 	}
 	return r;
 }
 
-const cc0::jobs::job *cc0::jobs::job::get_root( void ) const
+const cc0::job *cc0::job::get_root( void ) const
 {
-	const cc0::jobs::job *r = this;
+	const cc0::job *r = this;
 	while (r->m_parent != nullptr) {
 		r = r->m_parent;
 	}
 	return r;
 }
 
-void cc0::jobs::job::set_time_scale(float time_scale)
+void cc0::job::set_time_scale(float time_scale)
 {
 	m_time_scale = uint64_t(double(time_scale) * double(1 << 16));
 }
 
-float cc0::jobs::job::get_time_scale( void ) const
+float cc0::job::get_time_scale( void ) const
 {
 	return float(m_time_scale / double(1 << 16));
 }
 
-cc0::jobs::job::query::results cc0::jobs::job::filter_children(const cc0::jobs::job::query &q)
+cc0::job::query::results cc0::job::filter_children(const cc0::job::query &q)
 {
 	return get_children().filter_results(q);
 }
 
-cc0::jobs::job::query::results cc0::jobs::job::get_children( void )
+cc0::job::query::results cc0::job::get_children( void )
 {
 	query::results r;
 	job *c = get_child();
@@ -713,7 +713,7 @@ cc0::jobs::job::query::results cc0::jobs::job::get_children( void )
 	return r;
 }
 
-uint64_t cc0::jobs::job::count_children( void ) const
+uint64_t cc0::job::count_children( void ) const
 {
 	const job *n = get_child();
 	uint64_t c = 0;
@@ -724,7 +724,7 @@ uint64_t cc0::jobs::job::count_children( void ) const
 	return c;
 }
 
-uint64_t cc0::jobs::job::count_decendants( void ) const
+uint64_t cc0::job::count_decendants( void ) const
 {
 	const job *n = get_child();
 	uint64_t c = 0;
@@ -735,61 +735,61 @@ uint64_t cc0::jobs::job::count_decendants( void ) const
 	return c;
 }
 
-void cc0::jobs::job::limit_tick_interval(uint64_t min_duration_ns, uint64_t max_duration_ns)
+void cc0::job::limit_tick_interval(uint64_t min_duration_ns, uint64_t max_duration_ns)
 {
 	m_min_duration_ns = min_duration_ns < max_duration_ns ? min_duration_ns : max_duration_ns;
 	m_max_duration_ns = min_duration_ns > max_duration_ns ? min_duration_ns : max_duration_ns;
 }
 
-void cc0::jobs::job::unlimit_tick_interval( void )
+void cc0::job::unlimit_tick_interval( void )
 {
 	m_min_duration_ns = 0;
 	m_max_duration_ns = 0;
 }
 
-void cc0::jobs::job::limit_tick_rate(uint64_t min_ticks_per_sec, uint64_t max_ticks_per_sec)
+void cc0::job::limit_tick_rate(uint64_t min_ticks_per_sec, uint64_t max_ticks_per_sec)
 {
 	limit_tick_interval(NS_PER_SEC / max_ticks_per_sec, NS_PER_SEC / min_ticks_per_sec);
 }
 
-void cc0::jobs::job::unlimit_tick_rate( void )
+void cc0::job::unlimit_tick_rate( void )
 {
 	unlimit_tick_interval();
 }
 
-uint64_t cc0::jobs::job::get_min_duration_ns( void ) const
+uint64_t cc0::job::get_min_duration_ns( void ) const
 {
 	return m_min_duration_ns;
 }
 
-uint64_t cc0::jobs::job::get_max_duration_ns( void ) const
+uint64_t cc0::job::get_max_duration_ns( void ) const
 {
 	return m_max_duration_ns;
 }
 
-uint64_t cc0::jobs::job::get_min_tick_per_sec( void ) const
+uint64_t cc0::job::get_min_tick_per_sec( void ) const
 {
 	return m_max_duration_ns > 0 ? NS_PER_SEC / m_max_duration_ns : UINT64_MAX;
 }
 
-uint64_t cc0::jobs::job::get_max_tick_per_sec( void ) const
+uint64_t cc0::job::get_max_tick_per_sec( void ) const
 {
 	return m_min_duration_ns > 0 ? NS_PER_SEC / m_min_duration_ns : UINT64_MAX;
 }
 
-bool cc0::jobs::job::is_tick_limited( void ) const
+bool cc0::job::is_tick_limited( void ) const
 {
 	return m_min_duration_ns != 0 || m_max_duration_ns != 0;
 }
 
-cc0::jobs::job *cc0::jobs::job::create_orphan(const char *type_name)
+cc0::job *cc0::job::create_orphan(const char *type_name)
 {
-	cc0::jobs::job *j = nullptr;
-	instance_fn *i = m_products.get(type_name);
+	cc0::job *j = nullptr;
+	cc0::jobs_internal::instance_fn *i = m_products.get(type_name);
 	if (i != nullptr) {
-		cc0::jobs::internal::rtti *r = (*i)();
+		cc0::jobs_internal::rtti *r = (*i)();
 		if (r != nullptr) {
-			j = r->cast<cc0::jobs::job>();
+			j = r->cast<cc0::job>();
 			if (j == nullptr) {
 				delete r;
 			}
@@ -799,16 +799,16 @@ cc0::jobs::job *cc0::jobs::job::create_orphan(const char *type_name)
 	return j;
 }
 
-bool cc0::jobs::job::has_enabled_children( void ) const
+bool cc0::job::has_enabled_children( void ) const
 {
-	const cc0::jobs::job *c = get_child();
+	const cc0::job *c = get_child();
 	while (c != nullptr && c->is_disabled()) {
 		c = c->get_sibling();
 	}
 	return c != nullptr;
 }
 
-void cc0::jobs::job::run( void )
+void cc0::job::run( void )
 {
 	on_birth();
 

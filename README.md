@@ -17,7 +17,7 @@ At its heart, this type of functionality is what you see in operating systems wi
 `jobs` is intended to be minimal. It does not depend on STL, nor any other external library. It contains only the minimum amount of functionality to provide useful data structures. It exposes only the functionality and data structures needed to attain its goal, and keeps the implementation details private.
 
 ## Usage
-`jobs` has one main class which the user will be interfacing most with, `cc0::jobs::job`. Some ease-of-use functionality is provided to get going quickly, such as `cc0::jobs::job::run` which implements enough boiler plate code to just be able to make a single call to get the job tree executing. 
+`jobs` has one main class which the user will be interfacing most with, `cc0::job`. Some ease-of-use functionality is provided to get going quickly, such as `cc0::job::run` which implements enough boiler plate code to just be able to make a single call to get the job tree executing. 
 
 ## Building
 No special adjustments need to be made to build `jobs` except enabling C++11 compatibility or above. Simply include the relevant headers in your code and make sure the headers and source files are available in your compiler search paths. Using `g++` as an example, building is no harder than:
@@ -30,7 +30,7 @@ g++ -std=c++11 code.cpp jobs/jobs.cpp
 
 ## Examples
 ### Creating and registering custom jobs
-In and by themselves, jobs do not perform much meaningful work in relation to the user. Because of this, it is necessary to use inheritance in C++ and overload virtual functions inside the jobs in order for them to perform useful tasks. Using the provided macros `CC0_JOBS_NEW` for deriving from the base `cc0::jobs::job` class or `CC0_JOBS_DERIVE` to derive from a derivative of the base `cc0::jobs::job` class ensures that the in-house RTTI works as well as enabling instantiation via class name string by registering the class name with a global factory pattern class.
+In and by themselves, jobs do not perform much meaningful work in relation to the user. Because of this, it is necessary to use inheritance in C++ and overload virtual functions inside the jobs in order for them to perform useful tasks. Using the provided macros `CC0_JOBS_NEW` for deriving from the base `cc0::job` class or `CC0_JOBS_DERIVE` to derive from a derivative of the base `cc0::job` class ensures that the in-house RTTI works as well as enabling instantiation via class name string by registering the class name with a global factory pattern class.
 ```
 #include <iostream>
 #include "jobs/jobs.h"
@@ -88,7 +88,7 @@ protected:
 Try not to rely on what order children are arranged in. Only know that they execute after their parent's `on_tick` function, but before their parent's `on_tock` function.
 
 ### Running a basic custom job
-The `cc0::jobs::job::run` function provides the user with an easy-to-use function containing boilerplate code for setting up a root job which does nothing but ensures that there is some child among its children that is still enabled (i.e. not disabled and not terminated). If there is no such child, the job terminates itself and the `cc0::jobs::job::run` function is exited.
+The `cc0::job::run` function provides the user with an easy-to-use function containing boilerplate code for setting up a root job which does nothing but ensures that there is some child among its children that is still enabled (i.e. not disabled and not terminated). If there is no such child, the job terminates itself and the `cc0::job::run` function is exited.
 
 ```
 #include <iostream>
@@ -114,14 +114,14 @@ int main()
 	return 0;
 }
 ```
-The `cc0::jobs::job::run` function comes in two variants; One taking a job class as template parameter, and one taking a string as a traditional parameter. The parameter is used to determine what initial job should be created. This job should be some kind of initialization job which adds further children to itself or the root job in order to form a useful application.
+The `cc0::job::run` function comes in two variants; One taking a job class as template parameter, and one taking a string as a traditional parameter. The parameter is used to determine what initial job should be created. This job should be some kind of initialization job which adds further children to itself or the root job in order to form a useful application.
 
 ### Accessing the job tree
 The job tree can be accessed in a variety of different ways. Assume we have access to a job, `j`, at an undefined location in the tree. Other jobs in the tree can be accessed via the following traversal techniques.
 
 Traversing up the tree until the root is hit:
 ```
-const cc0::jobs::job *p = j;
+const cc0::job *p = j;
 while (p->get_parent() != nullptr) {
 	p = p->get_parent();
 }
@@ -130,18 +130,18 @@ while (p->get_parent() != nullptr) {
 
 The root node can be accessed directly without manual traversal:
 ```
-const cc0::jobs::job *r = j->get_root();
+const cc0::job *r = j->get_root();
 ```
 
 A job's children can be accessed in the following manner:
 ```
-const cc0::jobs::job *c = j->get_child();
+const cc0::job *c = j->get_child();
 // `c` will now point to the first of `j`'s children, or null if `j` does not have children.
 ```
 
 Traversing over a job's children is done in the following manner:
 ```
-const cc0::jobs::job *c = j->get_child();
+const cc0::job *c = j->get_child();
 while (c != nullptr) {
 	c = c->get_sibling();
 }
@@ -198,7 +198,7 @@ CC0_JOBS_NEW(custom_child)
 {
 protected:
 	void on_tick(uint64_t) {
-		cc0::jobs::job::ref<custom_parent> parent = get_parent()->get_ref().cast<custom_parent>();
+		cc0::job::ref<custom_parent> parent = get_parent()->get_ref().cast<custom_parent>();
 	}
 };
 
@@ -218,7 +218,7 @@ Jobs often need to select children based off of some criteria. The criteria is e
 ```
 #include "jobs/jobs.h"
 
-bool only_enabled(const cc0::jobs::job &j)
+bool only_enabled(const cc0::job &j)
 {
 	return j.is_enabled(); // The search criteria, i.e. the job must have existed for 1000 miliseconds.
 };
@@ -228,7 +228,7 @@ CC0_JOBS_NEW(custom_job)
 protected:
 	void on_birth( void ) {
 		for (int i = 0; i < 10; ++i) {
-			job *j = add_child<cc0::jobs::job>();
+			job *j = add_child<cc0::job>();
 			if (i % 1) {
 				j->disable();
 			}
@@ -255,20 +255,20 @@ CC0_JOBS_NEW(custom_job)
 {
 protected:
 	void on_birth( void ) {
-		cc0::jobs::job::query::results r = get_children<custom_job>();
+		cc0::job::query::results r = get_children<custom_job>();
 	}
 };
 ```
-Queries should not use the provided methods for inheritance that would otherwise apply for jobs (i.e. `cc0::jobs::inherit`, `CC0_JOBS_NEW`, or `CC0_JOBS_DERIVE`).
+Queries should not use the provided methods for inheritance that would otherwise apply for jobs (i.e. `cc0::inherit`, `CC0_JOBS_NEW`, or `CC0_JOBS_DERIVE`).
 
 There are a few optional ways to apply queries:
 
-One way is to inherit `cc0::jobs::job::query` and overloading the public `()` operator (`const`) taking a `const cc0::jobs::job&` as parameter and returning a `bool`.
+One way is to inherit `cc0::job::query` and overloading the public `()` operator (`const`) taking a `const cc0::job&` as parameter and returning a `bool`.
 ```
-class custom_query : public cc0::jobs::job::query
+class custom_query : public cc0::job::query
 {
 public:
-	bool operator()(const cc0::jobs::job &j) const {
+	bool operator()(const cc0::job &j) const {
 		return j.is_enabled();
 	}
 };
@@ -280,7 +280,7 @@ CC0_JOBS_NEW(custom_job)
 protected:
 	void on_birth( void ) {
 		custom_query q;
-		cc0::jobs::job::query::results r = filter_children(q).filter_results(q);
+		cc0::job::query::results r = filter_children(q).filter_results(q);
 	}
 };
 ```
@@ -290,12 +290,12 @@ Templates can also be used to apply filters in a more looser manner that does no
 class custom_query_functor
 {
 public:
-	bool operator()(const cc0::jobs::job &j) const {
+	bool operator()(const cc0::job &j) const {
 		return j.is_enabled();
 	}
 };
 
-bool custom_query_function(const cc0::jobs::job &j)
+bool custom_query_function(const cc0::job &j)
 {
 	return j.is_enabled();
 }
@@ -305,7 +305,7 @@ CC0_JOBS_NEW(custom_job)
 protected:
 	void on_birth( void ) {
 		custom_query_functor ftor;
-		cc0::jobs::job::query::results r = filter_children(ftor).filter_results(custom_query_function);
+		cc0::job::query::results r = filter_children(ftor).filter_results(custom_query_function);
 	}
 };
 ```
@@ -315,7 +315,7 @@ Custom queries can be invoked in two ways when using templates; One way by expli
 class custom_query_functor
 {
 public:
-	bool operator()(const cc0::jobs::job &j) const {
+	bool operator()(const cc0::job &j) const {
 		return j.is_enabled();
 	}
 };
@@ -324,7 +324,7 @@ CC0_JOBS_NEW(custom_job)
 {
 protected:
 	void on_birth( void ) {
-		cc0::jobs::job::query::results r = filter_children<custom_query_functor>().filter_results<custom_query_functor>();
+		cc0::job::query::results r = filter_children<custom_query_functor>().filter_results<custom_query_functor>();
 	}
 };
 ```
@@ -339,11 +339,11 @@ Any job can access any other job in the tree. Any job may also expire at any tim
 CC0_JOBS_NEW(custom_job)
 {
 private:
-	cc0::jobs::job::ref m_child; // A persistent reference.
+	cc0::job::ref m_child; // A persistent reference.
 
 protected:
 	void on_birth( void ) {
-		m_child = add_child<cc0::jobs::job>()->get_ref(); // The persistent reference is set.
+		m_child = add_child<cc0::job>()->get_ref(); // The persistent reference is set.
 	}
 	void on_tick(uint64_t) {
 		if (m_child.get_job() != nullptr) {
@@ -417,7 +417,7 @@ private:
 	uint64_t m_custom_events_received;
 
 private:
-	void event_callback(cc0::jobs::job &sender) {
+	void event_callback(cc0::job &sender) {
 		++m_custom_events_received;
 	}
 protected:
@@ -453,7 +453,7 @@ private:
 	uint64_t m_custom_events_received;
 
 private:
-	void event_callback(cc0::jobs::job &sender) {
+	void event_callback(cc0::job &sender) {
 		++m_custom_events_received;
 		ignore("custom_event")
 	}
@@ -481,7 +481,7 @@ By default, the job tree will execute whenever it is called to trigger. However,
 
 Rate limiting:
 ```
-cc0::jobs::job j;
+cc0::job j;
 
 // Limit tick rate to an interval between 20Hz and 80Hz.
 j.limit_tick_rate(20, 80);
@@ -494,7 +494,7 @@ j.unlimit_tick_rate();
 
 Interval limiting:
 ```
-cc0::jobs::job j;
+cc0::job j;
 
 // Limit tick duration to an interval between 16 nanoseconds and 32 nanoseconds.
 j.limit_tick_duration(16, 32);
@@ -509,7 +509,7 @@ Limited tick rates and intervals function by letting a job sleep or clip time be
 
 Duration data for the root node is provided by the user, who can then decide whether to fix the elapsed time between ticks to some given value, or base the value on real time elapsed between ticks. 
 
-Note that waiting due to durations lower than the accepted minimum is implemented as a soft sleep, meaning that the thread executing the job tree will not stop processing job nodes, but will skip waiting ones. Jobs waiting due to durations will not be marked as sleeping. However, the convenience function `cc0::jobs::job::run` is an exception in this regard as it does a hard sleep, i.e. sleeps the executing thread in order to allow the thread to context switch and lower power consumption. The root node will still not be marked as sleeping in this case.
+Note that waiting due to durations lower than the accepted minimum is implemented as a soft sleep, meaning that the thread executing the job tree will not stop processing job nodes, but will skip waiting ones. Jobs waiting due to durations will not be marked as sleeping. However, the convenience function `cc0::job::run` is an exception in this regard as it does a hard sleep, i.e. sleeps the executing thread in order to allow the thread to context switch and lower power consumption. The root node will still not be marked as sleeping in this case.
 
 ### Running the job tree until complete
 Complex jobs may not terminate after a deterministic amount of time. In order to run such jobs to completion the user must run the root of the job tree until some condition has been fulfilled. The example below shows how such a root can be set up, and what convenience functions are provided.
@@ -565,7 +565,7 @@ Finally, the tree must execute:
 fork.run();
 ```
 
-`cc0::jobs::job::run` executes the tree until the provided root node (input parameter) is marked as disabled. In the example above, each child job will decrement a counter which, when hitting 0, will terminate the child job thereby marking it as disabled. The root node checks if there are any enabled children at each tick. When it does not detect a single enabled child, it terminates itself thereby marking it as disabled and returning from `cc0::jobs::job::run`.
+`cc0::job::run` executes the tree until the provided root node (input parameter) is marked as disabled. In the example above, each child job will decrement a counter which, when hitting 0, will terminate the child job thereby marking it as disabled. The root node checks if there are any enabled children at each tick. When it does not detect a single enabled child, it terminates itself thereby marking it as disabled and returning from `cc0::job::run`.
 
 ## Limitations
 `jobs` is not trivially threadable in an effective manner since any job may read or write to any other job.
