@@ -17,7 +17,7 @@ At its heart, this type of functionality is what you see in operating systems wi
 `jobs` is intended to be minimal. It does not depend on STL, nor any other external library. It contains only the minimum amount of functionality to provide useful data structures. It exposes only the functionality and data structures needed to attain its goal, and keeps the implementation details private.
 
 ## Usage
-`jobs` has one main class which the user will be interfacing most with, `cc0::jobs::job`. Some ease-of-use functionality is provided to get going quickly, such as `cc0::jobs::run` which implements enough boiler plate code to just be able to make a single call to get the job tree executing. 
+`jobs` has one main class which the user will be interfacing most with, `cc0::jobs::job`. Some ease-of-use functionality is provided to get going quickly, such as `cc0::jobs::job::run` which implements enough boiler plate code to just be able to make a single call to get the job tree executing. 
 
 ## Building
 No special adjustments need to be made to build `jobs` except enabling C++11 compatibility or above. Simply include the relevant headers in your code and make sure the headers and source files are available in your compiler search paths. Using `g++` as an example, building is no harder than:
@@ -108,7 +108,8 @@ protected:
 
 int main()
 {
-	cc0::jobs::run<printer>();
+	printer root;
+	cc0::jobs::job::run(root);
 	std::cout << "Program terminated" << std::endl;
 	return 0;
 }
@@ -239,7 +240,8 @@ protected:
 
 int main()
 {
-	cc0::jobs::run<custom_job>();
+	custom_job root;
+	cc0::jobs::job::run(root);
 	return 0;
 }
 ```
@@ -560,7 +562,7 @@ for (uint64_t i = 0; i < 100; ++i) {
 
 Finally, the tree must execute:
 ```
-cc0::jobs::run(&fork);
+cc0::jobs::job::run(fork);
 ```
 
 `run` executes the tree until the provided root node (input parameter) is marked as disabled. In the example above, each child job will decrement a counter which, when hitting 0, will terminate the child job thereby marking it as disabled. The root node checks if there are any enabled children at each tick. When it does not detect a single enabled child, it terminates itself thereby marking it as disabled and returning from `run`.

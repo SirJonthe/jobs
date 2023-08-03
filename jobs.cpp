@@ -330,12 +330,10 @@ void cc0::jobs::job::set_deleted( void )
 
 void cc0::jobs::job::add_sibling(cc0::jobs::job *&loc, cc0::jobs::job *p)
 {
-	if (loc == nullptr) {
-		loc = p;
-		loc->m_parent = this;
-	} else {
-		add_sibling(loc->m_sibling, p);
-	}
+	cc0::jobs::job *old_loc = loc;
+	loc = p;
+	loc->m_parent = this;
+	loc->m_sibling = old_loc;
 }
 
 void cc0::jobs::job::delete_siblings(cc0::jobs::job *&siblings)
@@ -810,12 +808,10 @@ bool cc0::jobs::job::has_enabled_children( void ) const
 	return c != nullptr;
 }
 
-//
-// global
-//
-
-void cc0::jobs::run(cc0::jobs::job &root)
+void cc0::jobs::job::run(cc0::jobs::job &root)
 {
+	root.on_birth();
+
 	uint64_t duration_ns = root.get_min_duration_ns();
 
 	while (root.is_enabled()) {
