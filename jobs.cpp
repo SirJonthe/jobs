@@ -808,23 +808,23 @@ bool cc0::jobs::job::has_enabled_children( void ) const
 	return c != nullptr;
 }
 
-void cc0::jobs::job::run(cc0::jobs::job &root)
+void cc0::jobs::job::run( void )
 {
-	root.on_birth();
+	on_birth();
 
-	uint64_t duration_ns = root.get_min_duration_ns();
+	uint64_t duration_ns = get_min_duration_ns();
 
-	while (root.is_enabled()) {
+	while (is_enabled()) {
 		
 		const uint64_t start_ns = std::chrono::high_resolution_clock::now().time_since_epoch().count();
 
-		root.tick(duration_ns);
+		tick(duration_ns);
 
 		duration_ns = std::chrono::high_resolution_clock::now().time_since_epoch().count() - start_ns;
 
-		if (duration_ns < root.get_min_duration_ns()) {
-			std::this_thread::sleep_for(std::chrono::nanoseconds(root.get_min_duration_ns() - duration_ns));
-			duration_ns = root.get_min_duration_ns();
+		if (duration_ns < get_min_duration_ns()) {
+			std::this_thread::sleep_for(std::chrono::nanoseconds(get_min_duration_ns() - duration_ns));
+			duration_ns = get_min_duration_ns();
 		}
 	}
 }

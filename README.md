@@ -88,7 +88,7 @@ protected:
 Try not to rely on what order children are arranged in. Only know that they execute after their parent's `on_tick` function, but before their parent's `on_tock` function.
 
 ### Running a basic custom job
-The `run` function provides the user with an easy-to-use function containing boilerplate code for setting up a root job which does nothing but ensures that there is some child among its children that is still enabled (i.e. not disabled and not terminated). If there is no such child, the job terminates itself and the `run` function is exited.
+The `cc0::jobs::job::run` function provides the user with an easy-to-use function containing boilerplate code for setting up a root job which does nothing but ensures that there is some child among its children that is still enabled (i.e. not disabled and not terminated). If there is no such child, the job terminates itself and the `cc0::jobs::job::run` function is exited.
 
 ```
 #include <iostream>
@@ -109,12 +109,12 @@ protected:
 int main()
 {
 	printer root;
-	cc0::jobs::job::run(root);
+	root.run();
 	std::cout << "Program terminated" << std::endl;
 	return 0;
 }
 ```
-The `run` function comes in two variants; One taking a job class as template parameter, and one taking a string as a traditional parameter. The parameter is used to determine what initial job should be created. This job should be some kind of initialization job which adds further children to itself or the root job in order to form a useful application.
+The `cc0::jobs::job::run` function comes in two variants; One taking a job class as template parameter, and one taking a string as a traditional parameter. The parameter is used to determine what initial job should be created. This job should be some kind of initialization job which adds further children to itself or the root job in order to form a useful application.
 
 ### Accessing the job tree
 The job tree can be accessed in a variety of different ways. Assume we have access to a job, `j`, at an undefined location in the tree. Other jobs in the tree can be accessed via the following traversal techniques.
@@ -241,7 +241,7 @@ protected:
 int main()
 {
 	custom_job root;
-	cc0::jobs::job::run(root);
+	root.run();
 	return 0;
 }
 ```
@@ -509,7 +509,7 @@ Limited tick rates and intervals function by letting a job sleep or clip time be
 
 Duration data for the root node is provided by the user, who can then decide whether to fix the elapsed time between ticks to some given value, or base the value on real time elapsed between ticks. 
 
-Note that waiting due to durations lower than the accepted minimum is implemented as a soft sleep, meaning that the thread executing the job tree will not stop processing job nodes, but will skip waiting ones. Jobs waiting due to durations will not be marked as sleeping. However, the convenience function `run` is an exception in this regard as it does a hard sleep, i.e. sleeps the executing thread in order to allow the thread to context switch and lower power consumption. The root node will still not be marked as sleeping in this case.
+Note that waiting due to durations lower than the accepted minimum is implemented as a soft sleep, meaning that the thread executing the job tree will not stop processing job nodes, but will skip waiting ones. Jobs waiting due to durations will not be marked as sleeping. However, the convenience function `cc0::jobs::job::run` is an exception in this regard as it does a hard sleep, i.e. sleeps the executing thread in order to allow the thread to context switch and lower power consumption. The root node will still not be marked as sleeping in this case.
 
 ### Running the job tree until complete
 Complex jobs may not terminate after a deterministic amount of time. In order to run such jobs to completion the user must run the root of the job tree until some condition has been fulfilled. The example below shows how such a root can be set up, and what convenience functions are provided.
@@ -562,10 +562,10 @@ for (uint64_t i = 0; i < 100; ++i) {
 
 Finally, the tree must execute:
 ```
-cc0::jobs::job::run(fork);
+fork.run();
 ```
 
-`run` executes the tree until the provided root node (input parameter) is marked as disabled. In the example above, each child job will decrement a counter which, when hitting 0, will terminate the child job thereby marking it as disabled. The root node checks if there are any enabled children at each tick. When it does not detect a single enabled child, it terminates itself thereby marking it as disabled and returning from `run`.
+`cc0::jobs::job::run` executes the tree until the provided root node (input parameter) is marked as disabled. In the example above, each child job will decrement a counter which, when hitting 0, will terminate the child job thereby marking it as disabled. The root node checks if there are any enabled children at each tick. When it does not detect a single enabled child, it terminates itself thereby marking it as disabled and returning from `cc0::jobs::job::run`.
 
 ## Limitations
 `jobs` is not trivially threadable in an effective manner since any job may read or write to any other job.

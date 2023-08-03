@@ -903,9 +903,9 @@ namespace cc0
 			/// @return True if there is at least one enabled child. False if there are no enabled children, or no children at all.
 			bool has_enabled_children( void ) const;
 
-			/// @brief Spawns a root job node and attaches the specified initial job as a child to that node, then continues execution until the root node no longer has any children.
-			/// @param root The node to the treated as the root node.
-			static void run(cc0::jobs::job &root);
+			/// @brief Continues execution until the job no longer is enabled.
+			/// @note This is the function that users want to trigger manually for root nodes as it will perform timing and continuously execute until the job, and its sub-jobs, are finished.
+			void run( void );
 		};
 	}
 }
