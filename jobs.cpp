@@ -771,12 +771,12 @@ uint64_t cc0::jobs::job::get_max_duration_ns( void ) const
 
 uint64_t cc0::jobs::job::get_min_tick_per_sec( void ) const
 {
-	return NS_PER_SEC / m_max_duration_ns;
+	return m_max_duration_ns > 0 ? NS_PER_SEC / m_max_duration_ns : UINT64_MAX;
 }
 
 uint64_t cc0::jobs::job::get_max_tick_per_sec( void ) const
 {
-	return NS_PER_SEC / m_min_duration_ns;
+	return m_min_duration_ns > 0 ? NS_PER_SEC / m_min_duration_ns : UINT64_MAX;
 }
 
 bool cc0::jobs::job::is_tick_limited( void ) const
@@ -816,7 +816,7 @@ bool cc0::jobs::job::has_enabled_children( void ) const
 
 void cc0::jobs::run(cc0::jobs::job &root)
 {
-	uint64_t duration_ns = root.get_min_tick_per_sec() > 0 ? root.get_min_tick_per_sec() : 1;
+	uint64_t duration_ns = root.get_min_duration_ns();
 
 	while (root.is_enabled()) {
 		
