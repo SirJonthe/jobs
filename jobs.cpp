@@ -465,7 +465,7 @@ void cc0::job::cycle(uint64_t duration_ns)
 		const uint64_t min_dur_ns = m_min_duration_ns; // Save these so that child jobs can not affect, and break, the current ticking process.
 		const uint64_t max_dur_ns = m_max_duration_ns;
 
-		for (uint64_t i = 0; i < m_max_ticks_per_cycle; ++i) {
+		for (uint64_t i = m_max_ticks_per_cycle; i > 0; --i) {
 
 			duration_ns = m_accumulated_duration_ns > max_dur_ns ? max_dur_ns : m_accumulated_duration_ns;
 
@@ -661,12 +661,12 @@ cc0::job::ref<> cc0::job::get_ref( void )
 	return ref<job>(this);
 }
 
-uint64_t cc0::job::get_existed_for( void ) const
+uint64_t cc0::job::get_existed_for_ns( void ) const
 {
 	return m_existed_for_ns;
 }
 
-uint64_t cc0::job::get_active_for( void ) const
+uint64_t cc0::job::get_active_for_ns( void ) const
 {
 	return m_active_for_ns;
 }
@@ -759,7 +759,7 @@ uint64_t cc0::job::get_local_time_ns( void ) const
 	return m_created_at_ns + m_existed_for_ns;
 }
 
-uint64_t cc0::job::created_at_ns( void ) const
+uint64_t cc0::job::get_created_at_ns( void ) const
 {
 	return m_created_at_ns;
 }

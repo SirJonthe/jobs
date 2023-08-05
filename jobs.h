@@ -779,11 +779,11 @@ namespace cc0
 
 		/// @brief Gets the accumulated time the job has existed for.
 		/// @return The accumulated time (in nanoseconds) the job has existed for.
-		uint64_t get_existed_for( void ) const;
+		uint64_t get_existed_for_ns( void ) const;
 
 		/// @brief Gets the accumulated time the job has been active for.
 		/// @return The accumulated time (in nanoseconds) the job has been active for.
-		uint64_t get_active_for( void ) const;
+		uint64_t get_active_for_ns( void ) const;
 
 		/// @brief Gets the accumulated number of ticks the job has existed for.
 		/// @return The accumulated number of ticks the job has existed for.
@@ -848,7 +848,7 @@ namespace cc0
 		/// @brief Returns the timestamp when this job was first created.
 		/// @return The timestamp when this job was first created.
 		/// @note Time scaling can make this vary between jobs in a counter-intuitive way.
-		uint64_t created_at_ns( void ) const;
+		uint64_t get_created_at_ns( void ) const;
 
 		/// @brief Applies a query.
 		/// @return A list of results containing children matching the query.
