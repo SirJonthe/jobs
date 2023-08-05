@@ -724,7 +724,9 @@ void cc0::job::set_global_time_scale(float time_scale)
 
 float cc0::job::get_global_time_scale( void ) const
 {
-	return float(m_time_scale * get_parent_time_scale() >> 32ULL);
+	return float(
+		((m_time_scale * get_parent_time_scale()) >> 16ULL) / double(1ULL << 16ULL)
+	);
 }
 
 uint64_t cc0::job::get_local_time_ns( void ) const
