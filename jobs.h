@@ -548,26 +548,27 @@ namespace cc0
 		static jobs_internal::search_tree<jobs_internal::instance_fn> m_products;
 
 	private:
-		job                                  *m_parent;
-		job                                  *m_sibling;
-		job                                  *m_child;
-		uint64_t                              m_job_id;
-		uint64_t                              m_sleep_ns;
-		uint64_t                              m_created_at_ns;
-		uint64_t                              m_existed_for_ns;
-		uint64_t                              m_active_for_ns;
-		uint64_t                              m_existed_tick_count;
-		uint64_t                              m_active_tick_count;
-		uint64_t                              m_time_scale;
-		uint64_t                              m_min_duration_ns;
-		uint64_t                              m_max_duration_ns;
-		uint64_t                              m_duration_ns;
-		jobs_internal::search_tree<callback>  m_event_callbacks;
-		shared                               *m_shared;
-		bool                                  m_enabled;
-		bool                                  m_kill;
-		bool                                  m_waiting;
-		bool                                  m_tick_lock;
+		job                                  *m_parent;                  // A pointer for the job's parent.
+		job                                  *m_sibling;                 // A pointer to the first sibling of potentially many sibling jobs.
+		job                                  *m_child;                   // A pointer to the first child of potentially many child jobs.
+		uint64_t                              m_job_id;                  // The unique ID of this job.
+		uint64_t                              m_sleep_ns;                // The amount of time, in nanoseconds, that the job should currently sleep for.
+		uint64_t                              m_created_at_ns;           // The timestamp at which the job was created.
+		uint64_t                              m_existed_for_ns;          // The number of nanoseconds that the job has existed for.
+		uint64_t                              m_active_for_ns;           // The number of nanoseconds that the job has been active for.
+		uint64_t                              m_existed_tick_count;      // The number of ticks that the job has existed for.
+		uint64_t                              m_active_tick_count;       // The number of ticks that the job has been active for.
+		uint64_t                              m_time_scale;              // The current scale that the input duration is subjected to.
+		uint64_t                              m_min_duration_ns;         // The minimum allowed duration to be passed to the job during a tick.
+		uint64_t                              m_max_duration_ns;         // The maximum allowed duration to be passed to the job during a tick.
+		uint64_t                              m_accumulated_duration_ns; // The accumulated time between job runs.
+		uint64_t                              m_max_ticks_per_cycle;     // TODO IMPL
+		jobs_internal::search_tree<callback>  m_event_callbacks;         // Holds the callbacks to be triggered when a particular event is sent to the job.
+		shared                               *m_shared;                  // Holds information about references to this job.
+		bool                                  m_enabled;                 // Indicates that the job is allowed to run.
+		bool                                  m_kill;                    // Indicates that the user has marked the job for termination.
+		bool                                  m_waiting;                 // Indicates that the job is being attempted to run despite the provided input time duration is less than the allowed duration minimum.
+		bool                                  m_tick_lock;               // Indicates that recursive operations are prevented from manually ticking the job.
 	
 	private:
 		/// @brief  Tells the shared object that the referenced object has been deleted.
@@ -605,11 +606,6 @@ namespace cc0
 		/// @return The scaled time.
 		static uint64_t scale_time(uint64_t time, uint64_t time_scale);
 
-		/// @brief Adjusts the duration to both scale time, fix the interval, and take into account sleep.
-		/// @param duration_ns The duration to adjust.
-		/// @return The adjusted duration.
-		uint64_t adjust_duration(uint64_t duration_ns) const;
-
 		/// @brief Gets the accumulated time scale of all parents.
 		/// @return The accumulated time scale.
 		uint64_t get_parent_time_scale( void ) const;
@@ -642,7 +638,7 @@ namespace cc0
 
 		/// @brief Calls on_tick, ticks all children, and on_tock.
 		/// @param duration_ns The time elapsed.
-		void tick(uint64_t duration_ns);
+		void cycle(uint64_t duration_ns);
 		
 		/// @brief Queues the job for destruction. The 'on_death' function is called immediately (if the object is active), but the memory for the job may not be freed immediately.
 		/// @note Kills all children first, then kills the parent job. The 'death' function is only called if the job is active.

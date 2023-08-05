@@ -370,7 +370,7 @@ void cc0::job::delete_killed_children(cc0::job *&child)
 void cc0::job::tick_children(uint64_t duration_ns)
 {
 	for (cc0::job *c = m_child; c != nullptr && is_active(); c = c->m_sibling) {
-		c->tick(duration_ns);
+		c->cycle(duration_ns);
 	}
 }
 
@@ -387,12 +387,6 @@ void cc0::job::get_notified(const char *event, cc0::job &sender)
 uint64_t cc0::job::scale_time(uint64_t time, uint64_t time_scale)
 {
 	return (time * time_scale) >> 16ULL;
-}
-
-uint64_t cc0::job::adjust_duration(uint64_t duration_ns) const
-{
-	duration_ns = scale_time(duration_ns + m_duration_ns, m_time_scale);
-	return duration_ns < m_max_duration_ns ? duration_ns : m_max_duration_ns;
 }
 
 uint64_t cc0::job::get_parent_time_scale( void ) const
@@ -418,7 +412,7 @@ cc0::job::job( void ) :
 	m_sleep_ns(0),
 	m_created_at_ns(0),
 	m_existed_for_ns(0), m_active_for_ns(0), m_existed_tick_count(0), m_active_tick_count(0),
-	m_min_duration_ns(0), m_max_duration_ns(0), m_duration_ns(m_min_duration_ns),
+	m_min_duration_ns(0), m_max_duration_ns(UINT64_MAX), m_accumulated_duration_ns(m_min_duration_ns), m_max_ticks_per_cycle(1),
 	m_time_scale(1ULL << 16ULL),
 	m_event_callbacks(),
 	m_shared(new shared{ 0, false }),
@@ -439,50 +433,59 @@ cc0::job::~job( void )
 	}
 }
 
-void cc0::job::tick(uint64_t duration_ns)
+void cc0::job::cycle(uint64_t duration_ns)
 {
 	if (!m_tick_lock) {
 		m_tick_lock = true;
 		m_waiting = false;
 
-		duration_ns = adjust_duration(duration_ns);
-		
-		m_existed_for_ns += duration_ns;
-		++m_existed_tick_count;
+		duration_ns = scale_time(duration_ns, m_time_scale);
+		m_accumulated_duration_ns += duration_ns;
 
-		if (is_sleeping()) {
-			// TODO: Unsure if m_sleep_ns needs to be scaled or not...
-			if (m_sleep_ns <= duration_ns) {
-				m_sleep_ns = 0;
-				duration_ns -= m_sleep_ns;
-			} else {
-				m_sleep_ns -= duration_ns;
-				duration_ns = 0;
+		const uint64_t min_dur_ns = m_min_duration_ns; // Save these so that child jobs can not affect, and break, the current ticking process.
+		const uint64_t max_dur_ns = m_max_duration_ns;
+
+		for (uint64_t i = 0; i < m_max_ticks_per_cycle; ++i) {
+
+			duration_ns = m_accumulated_duration_ns > max_dur_ns ? max_dur_ns : m_accumulated_duration_ns;
+			m_accumulated_duration_ns -= duration_ns;
+
+			m_existed_for_ns += duration_ns;
+			++m_existed_tick_count;
+
+			if (is_sleeping()) {
+				// TODO: Unsure if m_sleep_ns needs to be scaled or not...
+				if (m_sleep_ns <= duration_ns) {
+					m_sleep_ns = 0;
+					duration_ns -= m_sleep_ns;
+				} else {
+					m_sleep_ns -= duration_ns;
+					duration_ns = 0;
+				}
+			}
+
+			if (duration_ns < m_min_duration_ns) {
+				m_tick_lock = false;
+				m_waiting = true;
+				return;
+			}
+
+			if (is_active()) {
+				m_active_for_ns += duration_ns;
+				++m_active_tick_count;
+				on_tick(duration_ns);
+			}
+
+			tick_children(duration_ns);
+
+			delete_killed_children(m_child);
+
+			if (is_active()) {
+				on_tock(duration_ns);
 			}
 		}
 
-		if (duration_ns < m_min_duration_ns) {
-			m_duration_ns += duration_ns;
-			m_tick_lock = false;
-			m_waiting = true;
-			return;
-		}
-
-		if (is_active()) {
-			m_active_for_ns += duration_ns;
-			++m_active_tick_count;
-			on_tick(duration_ns);
-		}
-
-		tick_children(duration_ns);
-
-		delete_killed_children(m_child);
-
-		if (is_active()) {
-			on_tock(duration_ns);
-		}
-
-		m_duration_ns = 0;
+		m_accumulated_duration_ns = max_dur_ns > 0 ? m_accumulated_duration_ns % max_dur_ns : 0;
 		m_tick_lock = false;
 	}
 }
@@ -788,7 +791,7 @@ void cc0::job::limit_tick_interval(uint64_t min_duration_ns, uint64_t max_durati
 void cc0::job::unlimit_tick_interval( void )
 {
 	m_min_duration_ns = 0;
-	m_max_duration_ns = 0;
+	m_max_duration_ns = UINT64_MAX;
 }
 
 void cc0::job::limit_tick_rate(uint64_t min_ticks_per_sec, uint64_t max_ticks_per_sec)
@@ -862,7 +865,7 @@ void cc0::job::run( void )
 		
 		const uint64_t start_ns = std::chrono::high_resolution_clock::now().time_since_epoch().count();
 
-		tick(duration_ns);
+		cycle(duration_ns);
 
 		duration_ns = std::chrono::high_resolution_clock::now().time_since_epoch().count() - start_ns;
 
