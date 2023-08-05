@@ -448,7 +448,7 @@ void cc0::job::cycle(uint64_t duration_ns)
 		for (uint64_t i = 0; i < m_max_ticks_per_cycle; ++i) {
 
 			duration_ns = m_accumulated_duration_ns > max_dur_ns ? max_dur_ns : m_accumulated_duration_ns;
-			m_accumulated_duration_ns -= duration_ns;
+			
 
 			m_existed_for_ns += duration_ns;
 			++m_existed_tick_count;
@@ -464,11 +464,12 @@ void cc0::job::cycle(uint64_t duration_ns)
 				}
 			}
 
-			if (duration_ns < m_min_duration_ns) {
+			if (duration_ns < min_dur_ns) {
 				m_tick_lock = false;
 				m_waiting = true;
 				return;
 			}
+			m_accumulated_duration_ns -= duration_ns;
 
 			if (is_active()) {
 				m_active_for_ns += duration_ns;
