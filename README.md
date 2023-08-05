@@ -28,6 +28,24 @@ g++ -std=c++11 code.cpp jobs/jobs.cpp
 
 ...where `code.cpp` is an example source file containing the user-defined code, such as program entry point.
 
+## Terminology
+
+### Cycles and tick-tock
+Jobs have one main function that the user can call, generally only from the desired root job, that will trigger execution of the entire job tree under the root node. This function is called `cycle` and the process is called cycling. The `cycle` function takes one input paramter in the form of elapsed time specified by the user (the user is allowed to specify time manually rather than using actual time between cycles for simulations that work only on specified time slices). Cycling triggers three events inside a job in the given order; Custom `on_tick` code, `cycle` on each child job, and custom `on_tock` code. This means that cycling triggers recursively triggers cycling in child nodes in a depth-first manner.
+
+Terms such as ticks and tocks are used to denote custom code that runs before, and after the cycling of child jobs respectively. Depending on the job settings a job can be set up to trigger its ticks, child cycles, and tocks more than once each cycle. This is especially handy for simulations which work with fixed time slices within a job tree that otherwise works with variable time slices.
+
+### Job states
+A job can be killed, i.e., marked for deletion (killed jobs are not immediately deleted as this could prove unsafe for other jobs that are still referencing the killed job). This will cease the job's main functionality such as ticking and event handling. A job that has been killed will be registered as such via the `is_killed` flag. Conversely, a job will register as alive via `is_alive` if it has not been killed. A job is killed via the `kill` function.
+
+A job may be enabled or disabled. When disabled, functions such as ticking and event handling are disabled. A job counts as enabled if its enabled flag is set to true. This state of the job can be checked via `is_enabled` and `is_disabled`. A job may be enabled via `enable` and disabled via `disable` functions. When a job has been killed, it will automatically count as disabled as well.
+
+Jobs may sleep for some given amount of time. Sleeping also prevents jobs' main functions from triggering, such as ticking and event handling. This state can be checked via `is_sleeping` and `is_awake`, and can be modified using `sleep` and `wake` respectively. Sleeping jobs will not register the job as disabled.
+
+Since there is overlap between a job being enabled/disabled, awake/asleep, and alive/killed a catch-all concept of 'active' is introduced. A job is active if it is alive, enabled, and awake. This state of the job can be checked via `is_active` and `is_inactive`.
+
+A job may wait, as in skip a tick/tock despite otherwise being active due to settings with its minimum and maximum allowed duration intervals. Whenever a job skips a tick/tock cycle it is known as "waiting" which can be checked via the `is_waiting` flag. Whenever a job does not skip a tick/tock cycle it is known as "ready" which can be checked via the `is_ready` flag. This is a separate concept from active however, meaning that a waiting job does not affect its active state.
+
 ## Examples
 ### Creating and registering custom jobs
 In and by themselves, jobs do not perform much meaningful work in relation to the user. Because of this, it is necessary to use inheritance in C++ and overload virtual functions inside the jobs in order for them to perform useful tasks. Using the provided macros `CC0_JOBS_NEW` for deriving from the base `cc0::job` class or `CC0_JOBS_DERIVE` to derive from a derivative of the base `cc0::job` class ensures that the in-house RTTI works as well as enabling instantiation via class name string by registering the class name with a global factory pattern class.
@@ -393,18 +411,7 @@ protected:
 
 Using game engines as an example, durations should for instance be used to scale movement over the duration. If the frame rate is high, the movement at each tick should be shorter, and vice versa.
 
-Local time scaling (i.e. time dilation) is not properly supported at the moment. The idea is for each job to keep its own time and the programmer would be able to slow down or speed up its execution (including the execution of its children) independent from the rest of the parent tree and letting the time drift apart from the parent tree.
-
-### Job state terminology
-A job can be killed, i.e., marked for deletion (killed jobs are not immediately deleted as this could prove unsafe for other jobs that are still referencing the killed job). This will cease the job's main functionality such as ticking and event handling. A job that has been killed will be registered as such via the `is_killed` flag. Conversely, a job will register as alive via `is_alive` if it has not been killed. A job is killed via the `kill` function.
-
-A job may be enabled or disabled. When disabled, functions such as ticking and event handling are disabled. A job counts as enabled if its enabled flag is set to true. This state of the job can be checked via `is_enabled` and `is_disabled`. A job may be enabled via `enable` and disabled via `disable` functions. When a job has been killed, it will automatically count as disabled as well.
-
-Jobs may sleep for some given amount of time. Sleeping also prevents jobs' main functions from triggering, such as ticking and event handling. This state can be checked via `is_sleeping` and `is_awake`, and can be modified using `sleep` and `wake` respectively. Sleeping jobs will not register the job as disabled.
-
-Since there is overlap between a job being enabled/disabled, awake/asleep, and alive/killed a catch-all concept of 'active' is introduced. A job is active if it is alive, enabled, and awake. This state of the job can be checked via `is_active` and `is_inactive`.
-
-A job may wait, as in skip a tick/tock despite otherwise being active due to settings with its minimum and maximum allowed duration intervals. Whenever a job skips a tick/tock cycle it is known as "waiting" which can be checked via the `is_waiting` flag. Whenever a job does not skip a tick/tock cycle it is known as "ready" which can be checked via the `is_ready` flag. This is a separate concept from active however, meaning that a waiting job does not affect its active state.
+Time scaling can also be used where the job thinks that more or less time than actual time has passed. This is manipulated using `set_local_time_scale` to set a relative scaling value, or `set_global_time_scale` to set an absolute value, where scaling values greater than one means that time is sped up, and scaling values lower than one means that time is slowed down.
 
 ### Event handling
 Each job has the capability to deal with events which are thrown from some other job in the job tree. Normally events come from either the parent job, or a child job, but could come from elsewhere.

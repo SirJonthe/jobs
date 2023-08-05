@@ -448,7 +448,6 @@ void cc0::job::cycle(uint64_t duration_ns)
 		for (uint64_t i = 0; i < m_max_ticks_per_cycle; ++i) {
 
 			duration_ns = m_accumulated_duration_ns > max_dur_ns ? max_dur_ns : m_accumulated_duration_ns;
-			
 
 			m_existed_for_ns += duration_ns;
 			++m_existed_tick_count;
