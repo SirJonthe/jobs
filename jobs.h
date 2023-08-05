@@ -260,7 +260,7 @@ namespace cc0
 
 		/// @brief A generic member function callback.
 		template < typename job_t >
-		class event_callback : public base_callback
+		class mem_callback : public base_callback
 		{
 		private:
 			job_t *m_self;
@@ -270,12 +270,29 @@ namespace cc0
 			/// @brief Constructor.
 			/// @param self  The object to call the member function from.
 			/// @param fn The member function.
-			event_callback(job_t *self, void (job_t::*fn)(job&));
+			mem_callback(job_t *self, void (job_t::*fn)(job&));
 
 			/// @brief Call the callback.
 			/// @param sender The sender.
 			void operator()(job &sender);
 		};
+
+		/// @brief A generic function callback.
+		class fn_callback : public base_callback
+		{
+		private:
+			void (*m_fn)(job&);
+		
+		public:
+			/// @brief Constructor.
+			/// @param fn The function.
+			fn_callback(void (*fn)(job&));
+
+			/// @brief Call the callback.
+			/// @param sender The sender.
+			void operator()(job &sender);
+		};
+
 
 		/// @brief A memory managed callback. Automatically deletes on destruction.
 		class callback
@@ -294,6 +311,10 @@ namespace cc0
 			/// @param fn The callback function.
 			template < typename job_t >
 			void set(job_t *self, void (job_t::*fn)(job&));
+
+			/// @brief Allocated memory for a callback.
+			/// @param fn The callback function.
+			void set(void (*fn)(job&));
 
 			/// @brief Calls the stored callback.
 			/// @param sender The sender.
@@ -1205,17 +1226,19 @@ bool cc0::jobs_internal::inherit<self_t,self_type_name_t,base_t>::is_registered(
 }
 
 //
-// event_callback
+// mem_callback
 //
 
 template < typename job_t >
-cc0::job::event_callback<job_t>::event_callback(job_t *self, void (job_t::*fn)(cc0::job&)) : m_self(self), m_memfn(fn)
+cc0::job::mem_callback<job_t>::mem_callback(job_t *self, void (job_t::*fn)(cc0::job&)) : m_self(self), m_memfn(fn)
 {}
 
 template < typename job_t >
-void cc0::job::event_callback<job_t>::operator()(cc0::job &sender)
+void cc0::job::mem_callback<job_t>::operator()(cc0::job &sender)
 {
-	return (m_self->*m_memfn)(sender);
+	if (m_self != nullptr && m_memfn != nullptr) {
+		(m_self->*m_memfn)(sender);
+	}
 }
 
 //
@@ -1226,7 +1249,7 @@ template < typename job_t >
 void cc0::job::callback::set(job_t *self, void (job_t::*fn)(cc0::job&))
 {
 	delete m_callback;
-	m_callback = new event_callback<job_t>(self, fn);
+	m_callback = new mem_callback<job_t>(self, fn);
 }
 
 //

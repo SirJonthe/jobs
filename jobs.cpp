@@ -63,6 +63,20 @@ const char *cc0::jobs_internal::rtti::type_name( void )
 }
 
 //
+// fn_callback
+//
+
+cc0::job::fn_callback::fn_callback(void (*fn)(cc0::job&)) : m_fn(fn)
+{}
+
+void cc0::job::fn_callback::operator()(cc0::job &sender)
+{
+	if (m_fn != nullptr) {
+		m_fn(sender);
+	}
+}
+
+//
 // callback
 //
 
@@ -72,6 +86,12 @@ cc0::job::callback::callback( void ) : m_callback(nullptr)
 cc0::job::callback::~callback( void )
 {
 	delete m_callback;
+}
+
+void cc0::job::callback::set(void (*fn)(job&))
+{
+	delete m_callback;
+	m_callback = new fn_callback(fn);
 }
 
 void cc0::job::callback::operator()(cc0::job &sender)
