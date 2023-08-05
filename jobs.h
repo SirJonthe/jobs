@@ -553,6 +553,7 @@ namespace cc0
 		job                                  *m_child;
 		uint64_t                              m_job_id;
 		uint64_t                              m_sleep_ns;
+		uint64_t                              m_created_at_ns;
 		uint64_t                              m_existed_for_ns;
 		uint64_t                              m_active_for_ns;
 		uint64_t                              m_existed_tick_count;
@@ -822,6 +823,15 @@ namespace cc0
 		/// @brief Gets the current time scale for this job on a global level.
 		/// @return The current time scale for this job on a global level.
 		float get_global_time_scale( void ) const;
+
+		/// @brief Returns the time according to the job, which may have had its time dilated due to time scaling.
+		/// @return The time according to the job.
+		uint64_t get_local_time_ns( void ) const;
+
+		/// @brief Returns the timestamp when this job was first created.
+		/// @return The timestamp when this job was first created.
+		/// @note Time scaling can make this vary between jobs in a counter-intuitive way.
+		uint64_t created_at_ns( void ) const;
 
 		/// @brief Applies a query.
 		/// @return A list of results containing children matching the query.
@@ -1385,6 +1395,7 @@ job_t *cc0::job::add_child( void )
 	if (!is_killed()) {
 		p = new job_t;
 		add_sibling(m_child, p);
+		((job*)p)->m_created_at_ns = get_local_time_ns();
 		((job*)p)->m_min_duration_ns = m_min_duration_ns;
 		((job*)p)->m_max_duration_ns = m_max_duration_ns;
 		p->on_birth();

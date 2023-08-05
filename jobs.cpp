@@ -416,6 +416,7 @@ cc0::job::job( void ) :
 	m_parent(nullptr), m_sibling(nullptr), m_child(nullptr),
 	m_job_id(cc0::jobs_internal::new_uuid()),
 	m_sleep_ns(0),
+	m_created_at_ns(0),
 	m_existed_for_ns(0), m_active_for_ns(0), m_existed_tick_count(0), m_active_tick_count(0),
 	m_min_duration_ns(0), m_max_duration_ns(0), m_duration_ns(m_min_duration_ns),
 	m_time_scale(1ULL << 16ULL),
@@ -530,6 +531,7 @@ cc0::job *cc0::job::add_child(const char *type_name)
 		p = create_orphan(type_name);
 		if (p != nullptr) {
 			add_sibling(m_child, p);
+			p->m_created_at_ns = get_local_time_ns();
 			p->m_min_duration_ns = m_min_duration_ns;
 			p->m_max_duration_ns = m_max_duration_ns;
 			p->on_birth();
@@ -723,6 +725,16 @@ void cc0::job::set_global_time_scale(float time_scale)
 float cc0::job::get_global_time_scale( void ) const
 {
 	return float(m_time_scale * get_parent_time_scale() >> 32ULL);
+}
+
+uint64_t cc0::job::get_local_time_ns( void ) const
+{
+	return m_created_at_ns + m_existed_for_ns;
+}
+
+uint64_t cc0::job::created_at_ns( void ) const
+{
+	return m_created_at_ns;
 }
 
 cc0::job::query::results cc0::job::filter_children(const cc0::job::query &q)
