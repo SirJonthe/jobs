@@ -708,7 +708,8 @@ const cc0::job *cc0::job::get_root( void ) const
 
 void cc0::job::set_local_time_scale(float time_scale)
 {
-	m_time_scale = uint64_t(double(time_scale) * double(1ULL << 16ULL));
+	const uint64_t new_scale = uint64_t(time_scale * double(1ULL << 16ULL));
+	m_time_scale = new_scale > 0 ? new_scale : 1;
 	// TODO: Do we need to scale m_sleep here?
 }
 
@@ -719,7 +720,8 @@ float cc0::job::get_local_time_scale( void ) const
 
 void cc0::job::set_global_time_scale(float time_scale)
 {
-	m_time_scale = (uint64_t(time_scale * double(1ULL << 16ULL)) / get_parent_time_scale() << 16ULL);
+	const uint64_t new_scale = (uint64_t(time_scale * double(1ULL << 16ULL)) << 16ULL) / get_parent_time_scale();
+	m_time_scale = new_scale > 0 ? new_scale : 1;
 }
 
 float cc0::job::get_global_time_scale( void ) const
