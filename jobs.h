@@ -949,6 +949,14 @@ namespace cc0
 		/// @return True if there is at least one enabled child. False if there are no enabled children, or no children at all.
 		bool has_enabled_children( void ) const;
 
+		/// @brief Returns the maximum allowed number of ticks per cycle.
+		/// @return The maximum allowed number of ticks per cycle.
+		uint64_t get_max_tick_per_cycle( void ) const;
+
+		/// @brief Returns the maximum allowed number of ticks per cycle.
+		/// @param max_ticks_per_cyle The maximum allowed number of ticks per cycle.
+		void set_max_tick_per_cycle(uint64_t max_ticks_per_cyle);
+
 		/// @brief Continues execution until the job no longer is enabled.
 		/// @note This is the function that users want to trigger manually for root nodes as it will perform timing and continuously execute until the job, and its sub-jobs, are finished.
 		void run( void );

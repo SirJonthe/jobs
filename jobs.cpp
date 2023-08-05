@@ -875,6 +875,16 @@ bool cc0::job::has_enabled_children( void ) const
 	return c != nullptr;
 }
 
+uint64_t cc0::job::get_max_tick_per_cycle( void ) const
+{
+	return m_max_ticks_per_cycle;
+}
+
+void cc0::job::set_max_tick_per_cycle(uint64_t max_ticks_per_cyle)
+{
+	m_max_ticks_per_cycle = max_ticks_per_cyle > 0 ? max_ticks_per_cyle : 1;
+}
+
 void cc0::job::run( void )
 {
 	on_birth();
