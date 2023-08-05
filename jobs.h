@@ -565,6 +565,7 @@ namespace cc0
 		shared                               *m_shared;
 		bool                                  m_enabled;
 		bool                                  m_kill;
+		bool                                  m_waiting;
 		bool                                  m_tick_lock;
 	
 	private:
@@ -607,6 +608,10 @@ namespace cc0
 		/// @param duration_ns The duration to adjust.
 		/// @return The adjusted duration.
 		uint64_t adjust_duration(uint64_t duration_ns) const;
+
+		/// @brief Gets the accumulated time scale of all parents.
+		/// @return The accumulated time scale.
+		uint64_t get_parent_time_scale( void ) const;
 
 	protected:
 		/// @brief Called when ticking the job, before the children are ticked.
@@ -716,6 +721,14 @@ namespace cc0
 		/// @return True if the job is either killed, disabled, or asleep.
 		bool is_inactive( void ) const;
 
+		/// @brief Checks if the job is currently waiting, i.e. active, but currently skipping tick/tock due to duration interval settings.
+		/// @return True if the job currently has skipped a tick/tock cycle.
+		bool is_waiting( void ) const;
+
+		/// @brief Checks if the job is currently ready, i.e. not waiting.
+		/// @return True if the job currently has not skipped a tick/tock cycle.
+		bool is_ready( void ) const;
+
 		/// @brief Returns the job ID.
 		/// @return The job ID.
 		uint64_t get_job_id( void ) const;
@@ -796,11 +809,19 @@ namespace cc0
 
 		/// @brief Sets the time scale for this job.
 		/// @param time_scale The desired time scaling.
-		void set_time_scale(float time_scale);
+		void set_local_time_scale(float time_scale);
 
 		/// @brief Gets the current time scale for this job.
 		/// @return The current time scale for this job.
-		float get_time_scale( void ) const;
+		float get_local_time_scale( void ) const;
+
+		/// @brief Sets the time scale for this job on a global level.
+		/// @param time_scale The desired global time scaling.
+		void set_global_time_scale(float time_scale);
+
+		/// @brief Gets the current time scale for this job on a global level.
+		/// @return The current time scale for this job on a global level.
+		float get_global_time_scale( void ) const;
 
 		/// @brief Applies a query.
 		/// @return A list of results containing children matching the query.

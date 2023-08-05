@@ -386,13 +386,18 @@ void cc0::job::get_notified(const char *event, cc0::job &sender)
 
 uint64_t cc0::job::scale_time(uint64_t time, uint64_t time_scale)
 {
-	return (time * time_scale) >> 16;
+	return (time * time_scale) >> 16ULL;
 }
 
 uint64_t cc0::job::adjust_duration(uint64_t duration_ns) const
 {
 	duration_ns = scale_time(duration_ns + m_duration_ns, m_time_scale);
 	return duration_ns < m_max_duration_ns ? duration_ns : m_max_duration_ns;
+}
+
+uint64_t cc0::job::get_parent_time_scale( void ) const
+{
+	return m_parent != nullptr ? ((m_parent->m_time_scale * m_parent->get_parent_time_scale()) >> 16ULL) : (1ULL << 16ULL);
 }
 
 void cc0::job::on_tick(uint64_t duration)
@@ -413,10 +418,10 @@ cc0::job::job( void ) :
 	m_sleep_ns(0),
 	m_existed_for_ns(0), m_active_for_ns(0), m_existed_tick_count(0), m_active_tick_count(0),
 	m_min_duration_ns(0), m_max_duration_ns(0), m_duration_ns(m_min_duration_ns),
-	m_time_scale(1 << 16),
+	m_time_scale(1ULL << 16ULL),
 	m_event_callbacks(),
 	m_shared(new shared{ 0, false }),
-	m_enabled(true), m_kill(false), m_tick_lock(false)
+	m_enabled(true), m_kill(false), m_waiting(false), m_tick_lock(false)
 {}
 
 cc0::job::~job( void )
@@ -437,6 +442,7 @@ void cc0::job::tick(uint64_t duration_ns)
 {
 	if (!m_tick_lock) {
 		m_tick_lock = true;
+		m_waiting = false;
 
 		duration_ns = adjust_duration(duration_ns);
 		
@@ -457,6 +463,7 @@ void cc0::job::tick(uint64_t duration_ns)
 		if (duration_ns < m_min_duration_ns) {
 			m_duration_ns += duration_ns;
 			m_tick_lock = false;
+			m_waiting = true;
 			return;
 		}
 
@@ -581,6 +588,16 @@ bool cc0::job::is_inactive( void ) const
 	return !is_active();
 }
 
+bool cc0::job::is_waiting( void ) const
+{
+	return m_waiting;
+}
+
+bool cc0::job::is_ready( void ) const
+{
+	return !is_waiting();
+}
+
 uint64_t cc0::job::get_job_id( void ) const
 {
 	return m_job_id;
@@ -687,14 +704,25 @@ const cc0::job *cc0::job::get_root( void ) const
 	return r;
 }
 
-void cc0::job::set_time_scale(float time_scale)
+void cc0::job::set_local_time_scale(float time_scale)
 {
-	m_time_scale = uint64_t(double(time_scale) * double(1 << 16));
+	m_time_scale = uint64_t(double(time_scale) * double(1ULL << 16ULL));
+	// TODO: Do we need to scale m_sleep here?
 }
 
-float cc0::job::get_time_scale( void ) const
+float cc0::job::get_local_time_scale( void ) const
 {
-	return float(m_time_scale / double(1 << 16));
+	return float(m_time_scale / double(1ULL << 16ULL));
+}
+
+void cc0::job::set_global_time_scale(float time_scale)
+{
+	m_time_scale = (uint64_t(time_scale * double(1ULL << 16ULL)) / get_parent_time_scale() << 16ULL);
+}
+
+float cc0::job::get_global_time_scale( void ) const
+{
+	return float(m_time_scale * get_parent_time_scale() >> 32ULL);
 }
 
 cc0::job::query::results cc0::job::filter_children(const cc0::job::query &q)

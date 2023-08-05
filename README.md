@@ -404,6 +404,8 @@ Jobs may sleep for some given amount of time. Sleeping also prevents jobs' main 
 
 Since there is overlap between a job being enabled/disabled, awake/asleep, and alive/killed a catch-all concept of 'active' is introduced. A job is active if it is alive, enabled, and awake. This state of the job can be checked via `is_active` and `is_inactive`.
 
+A job may wait, as in skip a tick/tock despite otherwise being active due to settings with its minimum and maximum allowed duration intervals. Whenever a job skips a tick/tock cycle it is known as "waiting" which can be checked via the `is_waiting` flag. Whenever a job does not skip a tick/tock cycle it is known as "ready" which can be checked via the `is_ready` flag. This is a separate concept from active however, meaning that a waiting job does not affect its active state.
+
 ### Event handling
 Each job has the capability to deal with events which are thrown from some other job in the job tree. Normally events come from either the parent job, or a child job, but could come from elsewhere.
 
@@ -570,7 +572,7 @@ fork.run();
 ## Limitations
 `jobs` is not trivially threadable in an effective manner since any job may read or write to any other job.
 
-`jobs` does not necessarily group jobs of the same type together to aid the compiler emitting SIMD instructions, since jobs are executed in depth-first order rather than by type.
+`jobs` does not group jobs of the same type together to aid the compiler emitting SIMD instructions, since jobs are executed in depth-first order rather than by type.
 
 Due to how different C++ compilers work, it may be necessary to use a job class in some way before it will be automatically registered with the job factory (the data structure responsible for enabling job class instantiation via identifier string) since C++ does not guarantee that global static variables are initialized before `main`. This issue may present itself as the failure to instantiate a class via its identifier string (returns null on allocation) even though the job class has been registered in-code since the compiler has deferred running that code to some point after the attempted instantiation.
 
@@ -579,3 +581,4 @@ Due to how different C++ compilers work, it may be necessary to use a job class 
 * Removing only one subscribed event callback rather than all for a single event.
 * Functional time scaling.
 * Instead of capping durations if they exceed the maximum allowed duration, maybe we should temporarily scale the job's time scale down to match the target time cap, although this would also affect children.
+* Time scaling should be local to the object making the call for a job to sleep. Calling `j.sleep(100)` should use `this`'s definition of `100` rather than `j`'s.
