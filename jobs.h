@@ -957,9 +957,10 @@ namespace cc0
 		/// @param max_ticks_per_cyle The maximum allowed number of ticks per cycle.
 		void set_max_tick_per_cycle(uint64_t max_ticks_per_cyle);
 
-		/// @brief Continues execution until the job no longer is enabled.
+		/// @brief Continues execution until the job is no longer enabled.
+		/// @param fixed_duration_ns The time slice to use as input when cycling the job. 0 (default) will use real time.
 		/// @note This is the function that users want to trigger manually for root nodes as it will perform timing and continuously execute until the job, and its sub-jobs, are finished.
-		void run( void );
+		void run(uint64_t fixed_duration_ns = 0);
 	};
 }
 

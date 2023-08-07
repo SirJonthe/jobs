@@ -885,19 +885,19 @@ void cc0::job::set_max_tick_per_cycle(uint64_t max_ticks_per_cyle)
 	m_max_ticks_per_cycle = max_ticks_per_cyle > 0 ? max_ticks_per_cyle : 1;
 }
 
-void cc0::job::run( void )
+void cc0::job::run(uint64_t fixed_duration_ns)
 {
 	on_birth();
 
-	uint64_t duration_ns = get_min_duration_ns();
+	uint64_t duration_ns = fixed_duration_ns > get_min_duration_ns() ? fixed_duration_ns : get_min_duration_ns();
 
 	while (is_enabled()) {
 		
-		const uint64_t start_ns = std::chrono::high_resolution_clock::now().time_since_epoch().count();
+		const uint64_t start_ns = fixed_duration_ns == 0 ? std::chrono::high_resolution_clock::now().time_since_epoch().count() : 0;
 
 		cycle(duration_ns);
 
-		duration_ns = std::chrono::high_resolution_clock::now().time_since_epoch().count() - start_ns;
+		duration_ns = fixed_duration_ns == 0 ? std::chrono::high_resolution_clock::now().time_since_epoch().count() - start_ns : fixed_duration_ns;
 
 		if (duration_ns < get_min_duration_ns()) {
 			std::this_thread::sleep_for(std::chrono::nanoseconds(get_min_duration_ns() - duration_ns));
