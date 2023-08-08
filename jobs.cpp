@@ -15,7 +15,7 @@
 
 uint64_t cc0::jobs_internal::new_uuid( void )
 {
-	static uint64_t uuid = 0;
+	static uint64_t uuid = 1; // Never allocate UUID=0 as we reserve that.
 	return uuid++;
 }
 
@@ -397,9 +397,19 @@ void cc0::job::tick_children(uint64_t duration_ns)
 void cc0::job::get_notified(const char *event, cc0::job &sender)
 {
 	if (is_active()) {
-		callback *c = m_event_callbacks.get(event);
-		if (c != nullptr) {
-			(*c)(sender);
+		callback_tree *t = m_event_callbacks.get(0);
+		if (t != nullptr) {
+			callback *c = t->get(event);
+			if (c != nullptr) {
+				(*c)(sender);
+			}
+		}
+		t = m_event_callbacks.get(sender.get_job_id());
+		if (t != nullptr) {
+			callback *c = t->get(event);
+			if (c != nullptr) {
+				(*c)(sender);
+			}
 		}
 	}
 }
@@ -544,7 +554,23 @@ void cc0::job::wake( void )
 
 void cc0::job::ignore(const char *event)
 {
-	m_event_callbacks.remove(event);
+	callback_tree *t = m_event_callbacks.get(0);
+	if (t != nullptr) {
+		t->remove(event);
+	}
+}
+
+void cc0::job::ignore(const char *event, const cc0::job &sender)
+{
+	callback_tree *t = m_event_callbacks.get(sender.get_job_id());
+	if (t != nullptr) {
+		t->remove(event);
+	}
+}
+
+void cc0::job::ignore(const cc0::job &sender)
+{
+	m_event_callbacks.remove(sender.get_job_id());
 }
 
 cc0::job *cc0::job::add_child(const char *type_name)
@@ -904,4 +930,25 @@ void cc0::job::run(uint64_t fixed_duration_ns)
 			duration_ns = get_min_duration_ns();
 		}
 	}
+}
+
+//
+// defer
+//
+
+void cc0::jobs_internal::defer::on_tick(uint64_t)
+{
+	if (get_active_for_ns() >= m_target_time_ns) {
+		notify_parent("defer");
+		kill();
+	}
+}
+
+cc0::jobs_internal::defer::defer( void ) :
+	m_target_time_ns(get_active_for_ns())
+{}
+
+void cc0::jobs_internal::defer::set_delay(uint64_t ns)
+{
+	m_target_time_ns = get_active_for_ns() + ns;
 }

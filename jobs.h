@@ -160,6 +160,7 @@ namespace cc0
 			/// @brief Returns an existing value if key exists, or adds a new key-value pair if it does not.
 			/// @param key The name of the job class derivative that will be used to call the instance function.
 			/// @param value The instance function that allocates memory for the specified job class derivative.
+			/// @return Pointer to the newly added value.
 			type_t *add(const key_t &key, const type_t &value);
 
 			/// @brief Returns a pointer to the value pointed to by the key.
@@ -293,7 +294,6 @@ namespace cc0
 			void operator()(job &sender);
 		};
 
-
 		/// @brief A memory managed callback. Automatically deletes on destruction.
 		class callback
 		{
@@ -320,6 +320,12 @@ namespace cc0
 			/// @param sender The sender.
 			void operator()(job &sender);
 		};
+
+		/// @brief A search tree with callbacks identified by event name.
+		typedef jobs_internal::search_tree<callback> callback_tree;
+		
+		/// @brief A search tree with callback trees identified by sender address.
+		typedef jobs_internal::search_tree<callback_tree, uint64_t> event_tree;
 
 	public:
 		/// @brief Safely references a job. Will yield null if the referenced job has been destroyed.
@@ -583,8 +589,8 @@ namespace cc0
 		uint64_t                              m_min_duration_ns;         // The minimum allowed duration to be passed to the job during a tick.
 		uint64_t                              m_max_duration_ns;         // The maximum allowed duration to be passed to the job during a tick.
 		uint64_t                              m_accumulated_duration_ns; // The accumulated time between job runs.
-		uint64_t                              m_max_ticks_per_cycle;     // TODO IMPL
-		jobs_internal::search_tree<callback>  m_event_callbacks;         // Holds the callbacks to be triggered when a particular event is sent to the job.
+		uint64_t                              m_max_ticks_per_cycle;     // Limits the numer of ticks that are allowed to be performed each cycle for this job.
+		event_tree                            m_event_callbacks;         // Holds the callbacks to be triggered when a particular event is sent to the job.
 		shared                               *m_shared;                  // Holds information about references to this job.
 		bool                                  m_enabled;                 // Indicates that the job is allowed to run.
 		bool                                  m_kill;                    // Indicates that the user has marked the job for termination.
@@ -682,9 +688,26 @@ namespace cc0
 		template < typename job_t >
 		void listen(const char *event, void (job_t::*callback)(job&));
 
+		/// @brief Adds an event for the job to listen and respond to if the event originates from a specified sender.
+		/// @tparam job_t The sub-class the callback method is declared in.
+		/// @param event The event to listen to.
+		/// @param sender The origin of the event.
+		/// @param callback The member function to call when this job receives the event.
+		template < typename job_t >
+		void listen(const char *event, const cc0::job &sender, void (job_t::*callback)(job&));
+
 		/// @brief Stops listening to the named event.
 		/// @param event The event to stop listening to.
 		void ignore(const char *event);
+
+		/// @brief Ignores an even from a sender.
+		/// @param event The event.
+		/// @param sender The origin of the event.
+		void ignore(const char *event, const cc0::job &sender);
+
+		/// @brief Ignores all events originating from the specified sender.
+		/// @param sender The origin of events.
+		void ignore(const cc0::job &sender);
 
 		/// @brief Adds a child to the job's list of children.
 		/// @tparam job_t The type of the child to add to the job.
@@ -957,11 +980,43 @@ namespace cc0
 		/// @param max_ticks_per_cyle The maximum allowed number of ticks per cycle.
 		void set_max_tick_per_cycle(uint64_t max_ticks_per_cyle);
 
+		/// @brief Delays the execution of a function.
+		/// @tparam job_t The sub-class the callback method is declared in.
+		/// @param fn The function.
+		/// @param delay_ns The delay in nanoseconds.
+		/// @note Execution is not guaranteed to be exactly at the specified delay as time is incremented in steps as the job tree cycles.
+		template < typename job_t = cc0::job >
+		void defer(void (job_t::*mem_fn)(job&), uint64_t delay_ns);
+
 		/// @brief Continues execution until the job is no longer enabled.
 		/// @param fixed_duration_ns The time slice to use as input when cycling the job. 0 (default) will use real time.
 		/// @note This is the function that users want to trigger manually for root nodes as it will perform timing and continuously execute until the job, and its sub-jobs, are finished.
 		void run(uint64_t fixed_duration_ns = 0);
 	};
+
+	namespace jobs_internal
+	{
+		/// @brief A helper class that defers a function call to 
+		/// @warning This is an internal class. Do not use in production code as the implementation is subject to change at any time.
+		CC0_JOBS_NEW(defer)
+		{
+		private:
+			uint64_t m_target_time_ns;
+		
+		protected:
+			/// Sends a "defer" event to the parent if enough time has passed.
+			/// @param NA Unused.
+			void on_tick(uint64_t);
+		
+		public:
+			/// @brief Default constructor.
+			defer( void );
+
+			/// @brief Sets the amount of time to elapse before "defer" event is notified to the parent.
+			/// @param ns The amount of time to elapse in nanoseconds.
+			void set_delay(uint64_t ns);
+		};
+	}
 }
 
 //
@@ -1012,8 +1067,8 @@ template < typename type_t, typename key_t >
 template < typename k_t >
 bool cc0::jobs_internal::search_tree<type_t,key_t>::kcmp(const k_t &a, const k_t &b) const
 {
-	const uint8_t *A = reinterpret_cast<const uint8_t*>(a);
-	const uint8_t *B = reinterpret_cast<const uint8_t*>(b);
+	const uint8_t *A = reinterpret_cast<const uint8_t*>(&a);
+	const uint8_t *B = reinterpret_cast<const uint8_t*>(&b);
 	for (uint32_t i = 0; i < sizeof(k_t); ++i) {
 		if (A[i] != B[i]) { return false; };
 	}
@@ -1411,7 +1466,25 @@ void cc0::job::listen(const char *event, void (job_t::*fn)(cc0::job&))
 {
 	job_t *self = cast<job_t>();
 	if (self != nullptr) {
-		callback *c = m_event_callbacks.add(event, callback());
+		callback_tree *t = m_event_callbacks.get(0);
+		if (t == nullptr) {
+			t = m_event_callbacks.add(0, callback_tree());
+		}
+		callback *c = t->add(event, callback());
+		c->set<job_t>(self, fn);
+	}
+}
+
+template < typename job_t >
+void cc0::job::listen(const char *event, const cc0::job &sender, void (job_t::*fn)(cc0::job&))
+{
+	job_t *self = cast<job_t>();
+	if (self != nullptr) {
+		callback_tree *t = m_event_callbacks.get(sender.get_job_id());
+		if (t == nullptr) {
+			t = m_event_callbacks.add(sender.get_job_id(), callback_tree());
+		}
+		callback *c = t->add(event, callback());
 		c->set<job_t>(self, fn);
 	}
 }
@@ -1458,6 +1531,14 @@ bool cc0::job::register_job(const char *type_name)
 	}
 	m_products.add(type_name, job_t::instance);
 	return true;
+}
+
+template < typename job_t >
+void cc0::job::defer(void (job_t::*mem_fn)(job&), uint64_t delay_ns)
+{
+	cc0::jobs_internal::defer *c = add_child<cc0::jobs_internal::defer>();
+	c->set_delay(delay_ns);
+	listen<job_t>("defer", *c, mem_fn);
 }
 
 #endif

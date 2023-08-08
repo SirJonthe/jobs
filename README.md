@@ -584,8 +584,7 @@ fork.run();
 Due to how different C++ compilers work, it may be necessary to use a job class in some way before it will be automatically registered with the job factory (the data structure responsible for enabling job class instantiation via identifier string) since C++ does not guarantee that global static variables are initialized before `main`. This issue may present itself as the failure to instantiate a class via its identifier string (returns null on allocation) even though the job class has been registered in-code since the compiler has deferred running that code to some point after the attempted instantiation.
 
 ## TODO
-* Registering multiple callbacks per event.
-* Removing only one subscribed event callback rather than all for a single event.
-* Functional time scaling.
+* Event callbacks need a way to clean up dead references, otherwise the tree will leak memory.
+	- Maybe we do callback references the other way around - Each job emits an undirected event, and instead keeps a list of other jobs to send the event to (list of callbacks to call).
 * Instead of capping durations if they exceed the maximum allowed duration, maybe we should temporarily scale the job's time scale down to match the target time cap, although this would also affect children.
 * Time scaling should be local to the object making the call for a job to sleep. Calling `j.sleep(100)` should use `this`'s definition of `100` rather than `j`'s.
