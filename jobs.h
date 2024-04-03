@@ -1496,10 +1496,11 @@ job_t *cc0::job::add_child( void )
 	if (!is_killed()) {
 		p = new job_t;
 		add_sibling(m_child, p);
-		((job*)p)->m_created_at_ns = get_local_time_ns();
-		((job*)p)->m_min_duration_ns = m_min_duration_ns;
-		((job*)p)->m_max_duration_ns = m_max_duration_ns;
-		p->on_birth();
+		cc0::job *b = dynamic_cast<cc0::job*>(p);
+		b->m_created_at_ns = get_local_time_ns();
+		b->m_min_duration_ns = m_min_duration_ns;
+		b->m_max_duration_ns = m_max_duration_ns;
+		b->on_birth();
 	}
 	return p;
 }
