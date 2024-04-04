@@ -378,6 +378,13 @@ namespace cc0
 			template < typename job2_t >
 			ref &operator=(ref<job2_t> &&r);
 
+			/// @brief Create a reference.
+			/// @tparam job2_t Type of the job pointer to reference.
+			/// @param r The job to reference.
+			/// @return The modified object.
+			template < typename job2_t >
+			ref &operator=(job2_t *r);
+
 			/// @brief References a new job.
 			/// @tparam job2_t Type of the job pointer to reference.
 			/// @param p The job to reference.
@@ -1372,6 +1379,14 @@ cc0::job::ref<job_t> &cc0::job::ref<job_t>::operator=(cc0::job::ref<job2_t> &&r)
 		set_ref(r.m_job);
 		r.release();
 	}
+	return *this;
+}
+
+template < typename job_t >
+template < typename job2_t >
+cc0::job::ref<job_t> &cc0::job::ref<job_t>::operator=(job2_t *r)
+{
+	set_ref(r);
 	return *this;
 }
 
