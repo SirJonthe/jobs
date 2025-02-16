@@ -1,4 +1,5 @@
-/// @file
+/// @file jobs.h
+/// @brief Contains a minimalist library that introduces a the concept of jobs, or tasks.
 /// @author github.com/SirJonthe
 /// @date 2022, 2023
 /// @copyright Public domain.
